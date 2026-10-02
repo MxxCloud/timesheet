@@ -64,74 +64,74 @@ test("solo l'ultimo intervallo può restare aperto, e solo se ammesso", () => {
   assert.equal(calcoli.validaIntervalli(apertoInMezzo, { apertoAmmesso: true })[1].length, 1);
 });
 
-test("presenza, pause e intervallo aperto", () => {
+test("ore lavorate: dall'ultima uscita alla prima entrata, pausa compresa", () => {
   const intervalli = [
-    { entrata: "08:30", uscita: "12:30" },
-    { entrata: "13:30", uscita: null },
+    { entrata: "09:00", uscita: "13:00" },
+    { entrata: "14:00", uscita: null },
   ];
-  assert.equal(calcoli.minutiPresenza(intervalli), 240);
-  assert.equal(calcoli.minutiPresenza(intervalli, calcoli.minutiDaOrario("15:00")), 330);
-  assert.deepEqual(calcoli.intervalloAperto(intervalli), { entrata: "13:30", uscita: null });
+  // Senza «adesso» la giornata finisce all'ultima uscita registrata.
+  assert.equal(calcoli.minutiLavorati(intervalli), 240);
+  assert.equal(calcoli.minutiLavorati(intervalli, calcoli.minutiDaOrario("16:00")), 420);
+  assert.deepEqual(calcoli.intervalloAperto(intervalli), { entrata: "14:00", uscita: null });
 
   const chiusi = [
-    { entrata: "08:30", uscita: "12:30" },
-    { entrata: "13:30", uscita: "17:30" },
+    { entrata: "09:00", uscita: "13:00" },
+    { entrata: "14:00", uscita: "17:00" },
   ];
-  assert.deepEqual(calcoli.pause(chiusi), [{ inizio: "12:30", fine: "13:30", minuti: 60 }]);
+  assert.equal(calcoli.minutiLavorati(chiusi), 480);
+  assert.deepEqual(calcoli.estremi(chiusi), { dalle: "09:00", alle: "17:00" });
+  assert.deepEqual(calcoli.estremi(intervalli), { dalle: "09:00", alle: "13:00" });
+  assert.deepEqual(calcoli.estremi([]), { dalle: null, alle: null });
+  assert.deepEqual(calcoli.pause(chiusi), [{ inizio: "13:00", fine: "14:00", minuti: 60 }]);
+  assert.equal(calcoli.minutiLavorati([]), 0);
 });
 
-test("i totali del giorno e del mese", () => {
+test("i totali del giorno e del mese, per progetto e per assenza", () => {
   const giorni = [
     {
-      data: "2026-10-01",
+      ...calcoli.giornoVuoto("2026-10-01"),
       intervalli: [
-        { entrata: "08:30", uscita: "12:30" },
-        { entrata: "13:30", uscita: "17:30" },
+        { entrata: "09:00", uscita: "13:00" },
+        { entrata: "14:00", uscita: "17:00" },
       ],
-      attivita: [
-        { attivita: "Progetto A", minuti: 300, descrizione: "" },
-        { attivita: "Amministrazione", minuti: 120, descrizione: "" },
+      progetti: [
+        { progetto: "Progetto A", minuti: 300 },
+        { progetto: "Amministrazione", minuti: 120 },
       ],
-      assenze: [],
       straordinario: { minuti: 60, nota: "chiusura" },
-      note: "",
     },
+    { ...calcoli.giornoVuoto("2026-10-02"), assenze: [{ tipo: "FE", minuti: 480 }] },
     {
-      data: "2026-10-02",
-      intervalli: [],
-      attivita: [],
-      assenze: [{ tipo: "FE", minuti: 480 }],
-      straordinario: null,
-      note: "",
-    },
-    {
-      data: "2026-10-05",
+      ...calcoli.giornoVuoto("2026-10-05"),
       intervalli: [{ entrata: "09:00", uscita: "13:00" }],
-      attivita: [{ attivita: "Progetto A", minuti: 240, descrizione: "" }],
+      progetti: [{ progetto: "Progetto A", minuti: 240 }],
       assenze: [{ tipo: "PE", minuti: 240 }],
-      straordinario: null,
-      note: "",
     },
   ];
 
   assert.deepEqual(calcoli.totaliGiorno(giorni[0]), {
-    presenza: 480,
-    attivita: 420,
+    lavorate: 480,
+    progetti: 420,
     assenze: 0,
     straordinario: 60,
     daRipartire: 60,
   });
 
   const mese = calcoli.totaliMese(giorni);
-  assert.equal(mese.presenza, 720);
-  assert.equal(mese.attivita, 660);
+  assert.equal(mese.lavorate, 720);
+  assert.equal(mese.progetti, 660);
   assert.equal(mese.assenze, 720);
   assert.equal(mese.straordinario, 60);
   assert.equal(mese.giorniPresenza, 2);
   assert.equal(mese.giorniAssenza, 2);
-  assert.equal(mese.perAttivita.get("Progetto A"), 540);
+  assert.equal(mese.perProgetto.get("Progetto A"), 540);
   assert.equal(mese.perAssenza.get("FE"), 480);
   assert.equal(mese.perAssenza.get("PE"), 240);
+});
+
+test("una giornata con la sola località è vuota", () => {
+  assert.equal(calcoli.giornoSenzaDati({ ...calcoli.giornoVuoto("2026-10-01"), localita: "Sede" }), true);
+  assert.equal(calcoli.giornoSenzaDati({ ...calcoli.giornoVuoto("2026-10-01"), descrizione: "x" }), false);
 });
 
 test("calendario: Pasqua, festività e giorni della settimana", () => {
@@ -164,4 +164,6 @@ test("date e mesi", () => {
   assert.equal(calcoli.dataValida("2026-02-30"), null);
   assert.equal(calcoli.dataValida("2026-02-28"), "2026-02-28");
   assert.equal(calcoli.meseValido("2026-13"), null);
+  assert.deepEqual(calcoli.mesiDellAnno("2026").slice(0, 2), ["2026-01", "2026-02"]);
+  assert.equal(calcoli.mesiDellAnno("2026").length, 12);
 });

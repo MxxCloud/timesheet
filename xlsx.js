@@ -248,12 +248,18 @@ class Stili {
     return this.formati.get(codice);
   }
 
-  /** Un descrittore come { grassetto, sfondo: "FFEEEEEE", bordo: true, formato: "[h]:mm" } → indice. */
+  /**
+   * Un descrittore come { grassetto, carattere: "Arial", sfondo: "FFEEEEEE",
+   * bordo: true, formato: "[h]:mm" } → indice. `bordo` è `true` per un bordo
+   * sottile su tutti i lati, oppure { sinistra, destra, sopra, sotto } con
+   * "thin" o "medium" per ciascun lato.
+   */
   indice(stile) {
     if (!stile) return 0;
     const chiave = JSON.stringify(stile);
     if (this.indici.has(chiave)) return this.indici.get(chiave);
 
+    const carattere = xml(stile.carattere ?? "Calibri");
     const font = Stili.posizione(
       this.font,
       "<font>" +
@@ -261,7 +267,7 @@ class Stili {
         (stile.corsivo ? "<i/>" : "") +
         `<sz val="${stile.dimensione ?? 11}"/>` +
         (stile.colore ? `<color rgb="${stile.colore}"/>` : "") +
-        '<name val="Calibri"/><family val="2"/></font>'
+        `<name val="${carattere}"/><family val="2"/></font>`
     );
     const riempimento = stile.sfondo
       ? Stili.posizione(
@@ -269,11 +275,20 @@ class Stili {
           `<fill><patternFill patternType="solid"><fgColor rgb="${stile.sfondo}"/><bgColor indexed="64"/></patternFill></fill>`
         )
       : 0;
-    const lato = (nome) => `<${nome} style="thin"><color rgb="FF9AA3AE"/></${nome}>`;
+    const lati = stile.bordo === true
+      ? { sinistra: "thin", destra: "thin", sopra: "thin", sotto: "thin" }
+      : stile.bordo || {};
+    const lato = (nome, spessore) =>
+      spessore ? `<${nome} style="${spessore}"><color auto="1"/></${nome}>` : `<${nome}/>`;
     const bordo = stile.bordo
       ? Stili.posizione(
           this.bordi,
-          `<border>${lato("left")}${lato("right")}${lato("top")}${lato("bottom")}<diagonal/></border>`
+          "<border>" +
+            lato("left", lati.sinistra) +
+            lato("right", lati.destra) +
+            lato("top", lati.sopra) +
+            lato("bottom", lati.sotto) +
+            "<diagonal/></border>"
         )
       : 0;
     const formato = this.formato(stile.formato);
@@ -371,19 +386,24 @@ function foglioXml(foglio, stili, primo) {
         .join("")}</mergeCells>`
     : "";
 
+  const adatta = foglio.adattaLarghezza || foglio.adattaPagina;
+  const margini = { sinistra: 0.4, destra: 0.4, sopra: 0.5, sotto: 0.5, ...foglio.margini };
+
   return (
     INTESTAZIONE +
     `<worksheet xmlns="${SPAZIO_MAIN}" xmlns:r="${SPAZIO_REL}">` +
-    (foglio.adattaLarghezza ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : "") +
+    (adatta ? '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>' : "") +
     `<dimension ref="${dimensione}"/>` +
     `<sheetViews><sheetView workbookViewId="0"${primo ? ' tabSelected="1"' : ""}>${blocco}</sheetView></sheetViews>` +
     '<sheetFormatPr defaultRowHeight="15"/>' +
     (colonne ? `<cols>${colonne}</cols>` : "") +
     `<sheetData>${corpo}</sheetData>` +
     unite +
-    '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/>' +
+    `<pageMargins left="${margini.sinistra}" right="${margini.destra}" top="${margini.sopra}" ` +
+    `bottom="${margini.sotto}" header="0.3" footer="0.3"/>` +
     `<pageSetup paperSize="9" orientation="${foglio.orizzontale ? "landscape" : "portrait"}"` +
-    (foglio.adattaLarghezza ? ' fitToWidth="1" fitToHeight="0"' : "") +
+    (foglio.adattaPagina ? ' fitToWidth="1" fitToHeight="1"' : "") +
+    (foglio.adattaLarghezza && !foglio.adattaPagina ? ' fitToWidth="1" fitToHeight="0"' : "") +
     "/></worksheet>"
   );
 }
@@ -396,7 +416,8 @@ export function nomeFoglioValido(nome) {
 /**
  * Crea un file .xlsx.
  * fogli: [{ nome, nascosto?, colonne?: [larghezza…], righe: [[cella…] | {altezza, celle}],
- *           unite?: ["A1:C1"], bloccaRighe?, orizzontale?, adattaLarghezza? }]
+ *           unite?: ["A1:C1"], bloccaRighe?, orizzontale?, adattaLarghezza?, adattaPagina?,
+ *           margini?: { sinistra, destra, sopra, sotto } in pollici }]
  * cella: testo | numero | null | { v, f?, stile? }
  */
 export function creaXlsx(fogli, { autore = "Timesheet" } = {}) {

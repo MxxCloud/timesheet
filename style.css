@@ -572,43 +572,36 @@ body > .editor {
   align-items: end;
 }
 
-.riga-attivita {
-  grid-template-columns: minmax(0, 1fr) 5.5rem auto;
-}
-
-.riga-attivita .descrizione {
-  grid-column: 1 / -1;
-  grid-row: 2;
-}
-
-.riga-assenza {
+/* Una scelta dall'elenco (progetto o assenza) con le sue ore. */
+.riga-scelta {
   grid-template-columns: minmax(0, 1fr) 5.5rem auto;
 }
 
 @media (min-width: 40rem) {
-  .riga-attivita {
-    grid-template-columns: minmax(0, 14rem) 5.5rem minmax(0, 1fr) auto;
-  }
-
-  .riga-attivita .descrizione {
-    grid-column: auto;
-    grid-row: auto;
-  }
-
   .riga {
     grid-template-columns: 9rem 9rem auto;
     justify-content: start;
   }
 
-  .riga-attivita,
-  .riga-assenza {
-    justify-content: stretch;
+  .riga-scelta {
+    grid-template-columns: minmax(0, 18rem) 5.5rem auto;
   }
+}
 
-  .riga-assenza {
-    grid-template-columns: minmax(0, 14rem) 5.5rem auto;
-    justify-content: start;
-  }
+.riga-localita {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.riga-localita select {
+  flex: 1 1 12rem;
+  width: auto;
+}
+
+.riga-localita input {
+  flex: 2 1 14rem;
+  width: auto;
 }
 
 .riga .campo label {
@@ -900,6 +893,14 @@ body > .editor {
   white-space: nowrap;
 }
 
+.riassunto-giorno {
+  overflow: hidden;
+  color: var(--testo-tenue);
+  font-size: 0.82rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .dettagli-giorno {
   display: flex;
   flex-wrap: wrap;
@@ -1149,6 +1150,10 @@ body > .editor {
 /* ======================================================================
    Ufficio
    ====================================================================== */
+
+.campo-mese {
+  max-width: 16rem;
+}
 
 .contenitore-tabella {
   max-width: 100%;

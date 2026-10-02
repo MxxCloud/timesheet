@@ -21,44 +21,52 @@ const editor = elemento("editor");
 const titoloEditor = elemento("titolo-editor");
 const sottotitoloEditor = elemento("sottotitolo-editor");
 const righeIntervalli = elemento("righe-intervalli");
-const righeAttivita = elemento("righe-attivita");
+const righeProgetti = elemento("righe-progetti");
 const righeAssenze = elemento("righe-assenze");
 const sintesiPresenza = elemento("sintesi-presenza");
-const sintesiAttivita = elemento("sintesi-attivita");
-const senzaAttivita = elemento("senza-attivita");
-const bottoneAggiungiAttivita = elemento("aggiungi-attivita");
+const sintesiProgetti = elemento("sintesi-progetti");
+const senzaProgetti = elemento("senza-progetti");
+const bottoneAggiungiProgetto = elemento("aggiungi-progetto");
 const bottoneAssegnaResto = elemento("assegna-resto");
+const campoDescrizione = elemento("descrizione-giorno");
+const sceltaLocalita = elemento("localita-giorno");
+const campoLocalitaAltro = elemento("localita-altro");
 const campoStraordinarioOre = elemento("straordinario-ore");
 const campoStraordinarioNota = elemento("straordinario-nota");
-const campoNoteGiorno = elemento("note-giorno");
 const esitoSalvataggio = elemento("esito-salvataggio");
 
 const etichettaMese = elemento("mese-corrente");
 const oreMese = elemento("ore-mese");
 const scomposizioneMese = elemento("scomposizione-mese");
+const bottoneEsportaAnno = elemento("esporta-anno");
 const statoInvio = elemento("stato-invio");
 const kpiGiorni = elemento("kpi-giorni");
 const kpiAssenze = elemento("kpi-assenze");
 const kpiStraordinari = elemento("kpi-straordinari");
-const attivitaMese = elemento("attivita-mese");
+const progettiMese = elemento("progetti-mese");
 const elencoGiorni = elemento("elenco-giorni");
 
 const formProfilo = elemento("form-profilo");
 const campoNome = elemento("profilo-nome");
 const campoCognome = elemento("profilo-cognome");
+const campoPosizione = elemento("profilo-posizione");
+const sceltaLocalitaProfilo = elemento("profilo-localita");
 const campoMatricola = elemento("profilo-matricola");
 const orePrevisteContenitore = elemento("ore-previste");
 const pannelloBackup = elemento("pannello-backup");
 const notaBackup = elemento("nota-backup");
 const campoAzienda = elemento("azienda");
 const campoPatrono = elemento("patrono");
-const elencoAttivitaConfig = elemento("elenco-attivita");
+const elencoProgettiConfig = elemento("elenco-progetti");
+const elencoLocalitaConfig = elemento("elenco-localita");
 const elencoAssenzeConfig = elemento("elenco-assenze");
 const sceltaTema = elemento("scelta-tema");
 const interruttoreUfficio = elemento("modalita-ufficio");
 
 const sintesiConfigurazione = elemento("sintesi-configurazione");
 const erroriFile = elemento("errori-file");
+const campoMeseRiepilogo = elemento("campo-mese-riepilogo");
+const sceltaMeseRiepilogo = elemento("mese-riepilogo");
 const titoloMeseRiepilogo = elemento("titolo-mese-riepilogo");
 const contenitoreRiepilogo = elemento("contenitore-riepilogo");
 const tabellaRiepilogo = elemento("tabella-riepilogo");
@@ -72,6 +80,8 @@ const bottoneConferma = elemento("bottone-conferma");
 
 const TIPO_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const GIORNI_BREVI = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+// Valore dell'opzione «Altro…» della località: una trasferta, scritta a mano.
+const ALTRA_LOCALITA = "__altra-localita__";
 
 const giornoEsteso = new Intl.DateTimeFormat("it-IT", { weekday: "long", day: "numeric", month: "long" });
 const giornoCompleto = new Intl.DateTimeFormat("it-IT", {
@@ -80,7 +90,6 @@ const giornoCompleto = new Intl.DateTimeFormat("it-IT", {
   month: "long",
   year: "numeric",
 });
-const giornoCorto = new Intl.DateTimeFormat("it-IT", { day: "numeric", month: "long" });
 const meseLungo = new Intl.DateTimeFormat("it-IT", { month: "long", year: "numeric" });
 const momento = new Intl.DateTimeFormat("it-IT", {
   day: "numeric",
@@ -95,7 +104,9 @@ let vistaAttiva = "oggi";
 let meseVisualizzato = calcoli.meseCorrente();
 let dataEditor = null;
 let editorModificato = false;
-let riepilogoCaricato = null;
+// Sezione Ufficio: i file letti (già uniti, uno per dipendente) e il mese scelto.
+let fileUfficio = null;
+let meseUfficio = null;
 let prossimoId = 0;
 
 // --- mattoni -------------------------------------------------------------
@@ -178,6 +189,16 @@ async function leggiJson(file) {
   }
 }
 
+function riempiSelettore(select, opzioni, scelta) {
+  select.replaceChildren(
+    ...opzioni.map(({ valore, testo }) => {
+      const opzione = new Option(testo, valore);
+      opzione.selected = valore === scelta;
+      return opzione;
+    })
+  );
+}
+
 // --- viste e navigazione -------------------------------------------------
 
 /** Lasciare l'editor con modifiche non salvate chiede conferma. */
@@ -232,7 +253,7 @@ elemento("torna-al-mese").addEventListener("click", async () => {
 elemento("svuota-giorno").addEventListener("click", async () => {
   const confermato = await chiediConferma(
     "Svuotare la giornata?",
-    `Presenze, attività, assenze e note di ${giornoEsteso.format(dataLocale(dataEditor))} verranno cancellate.`,
+    `Orari, attività, progetti e assenze di ${giornoEsteso.format(dataLocale(dataEditor))} verranno cancellati.`,
     "Svuota"
   );
   if (!confermato) return;
@@ -277,6 +298,13 @@ function bottoneTogli(etichetta) {
   return bottone;
 }
 
+function selettore(classe, opzioni, scelta) {
+  const select = document.createElement("select");
+  select.className = classe;
+  riempiSelettore(select, opzioni, scelta);
+  return select;
+}
+
 function rigaIntervallo(intervallo = { entrata: "", uscita: "" }) {
   const riga = crea("li", "riga");
   riga.append(
@@ -287,43 +315,27 @@ function rigaIntervallo(intervallo = { entrata: "", uscita: "" }) {
   return riga;
 }
 
-function selettore(classe, opzioni, scelta) {
-  const select = document.createElement("select");
-  select.className = classe;
-  for (const { valore, testo } of opzioni) {
-    const opzione = new Option(testo, valore);
-    opzione.selected = valore === scelta;
-    select.append(opzione);
-  }
-  return select;
-}
-
-function opzioniAttivita(scelta) {
-  // Le attività disattivate restano selezionabili solo dove sono già usate.
+function opzioniProgetti(scelta) {
+  // I progetti disattivati restano selezionabili solo dove sono già usati.
   return dati
-    .elencoAttivita()
-    .filter((attivita) => attivita.attiva || attivita.nome === scelta)
-    .map((attivita) => ({ valore: attivita.nome, testo: attivita.nome }));
+    .elencoProgetti()
+    .filter((progetto) => progetto.attivo || progetto.nome === scelta)
+    .map((progetto) => ({ valore: progetto.nome, testo: progetto.nome }));
 }
 
-function rigaAttivita(voce = { attivita: "", durata: "", descrizione: "" }) {
-  const riga = crea("li", "riga riga-attivita");
+function rigaProgetto(voce = { progetto: "", durata: "" }) {
+  const riga = crea("li", "riga riga-scelta");
   const durata = voce.minuti ? calcoli.durataInTesto(voce.minuti) : voce.durata ?? "";
   riga.append(
-    campo("Attività", selettore("attivita", opzioniAttivita(voce.attivita), voce.attivita)),
+    campo("Progetto", selettore("progetto", opzioniProgetti(voce.progetto), voce.progetto)),
     campo("Ore", input("text", "ore", durata, { inputmode: "decimal", placeholder: "2:30", autocomplete: "off" })),
-    campo(
-      "Descrizione",
-      input("text", "testo-descrizione", voce.descrizione ?? "", { maxlength: "200" }),
-      "campo descrizione"
-    ),
-    bottoneTogli("Togli l'attività")
+    bottoneTogli("Togli il progetto")
   );
   return riga;
 }
 
 function rigaAssenza(voce = { tipo: "", durata: "" }) {
-  const riga = crea("li", "riga riga-assenza");
+  const riga = crea("li", "riga riga-scelta");
   const opzioni = dati.elencoAssenze().map((assenza) => ({
     valore: assenza.codice,
     testo: `${assenza.codice} — ${assenza.nome}`,
@@ -337,6 +349,23 @@ function rigaAssenza(voce = { tipo: "", durata: "" }) {
   return riga;
 }
 
+/** La località di una giornata: dall'elenco, oppure «Altro…» con il nome scritto a mano. */
+function caricaLocalita(localita) {
+  const elenco = dati.elencoLocalita();
+  const scelta = localita || dati.localitaPredefinita();
+  const nellElenco = elenco.includes(scelta);
+  riempiSelettore(
+    sceltaLocalita,
+    [
+      ...elenco.map((nome) => ({ valore: nome, testo: nome })),
+      { valore: ALTRA_LOCALITA, testo: "Altro… (trasferta)" },
+    ],
+    nellElenco || !scelta ? scelta : ALTRA_LOCALITA
+  );
+  campoLocalitaAltro.value = nellElenco ? "" : scelta;
+  campoLocalitaAltro.hidden = sceltaLocalita.value !== ALTRA_LOCALITA;
+}
+
 function caricaEditor(data) {
   dataEditor = data;
   editorModificato = false;
@@ -344,18 +373,19 @@ function caricaEditor(data) {
   const oggi = calcoli.oggiIso();
   const calendario = calcoli.tipoGiorno(data, dati.configurazione().patrono);
 
-  const testoData = data === oggi ? "La giornata di oggi" : giornoCompleto.format(dataLocale(data));
-  titoloEditor.textContent = maiuscola(testoData);
+  titoloEditor.textContent =
+    data === oggi ? "La giornata di oggi" : maiuscola(giornoCompleto.format(dataLocale(data)));
   sottotitoloEditor.textContent =
     calendario.nome || (calendario.tipo === "feriale" ? "" : maiuscola(calendario.tipo));
   sottotitoloEditor.hidden = !sottotitoloEditor.textContent;
 
   righeIntervalli.replaceChildren(...giorno.intervalli.map(rigaIntervallo));
-  righeAttivita.replaceChildren(...giorno.attivita.map(rigaAttivita));
+  campoDescrizione.value = giorno.descrizione ?? "";
+  caricaLocalita(giorno.localita);
+  righeProgetti.replaceChildren(...giorno.progetti.map(rigaProgetto));
   righeAssenze.replaceChildren(...giorno.assenze.map(rigaAssenza));
   campoStraordinarioOre.value = giorno.straordinario ? calcoli.durataInTesto(giorno.straordinario.minuti) : "";
   campoStraordinarioNota.value = giorno.straordinario?.nota ?? "";
-  campoNoteGiorno.value = giorno.note ?? "";
   esitoSalvataggio.textContent = "";
   aggiornaSintesiEditor();
 }
@@ -367,55 +397,53 @@ function leggiEditor() {
     intervalli: [...righeIntervalli.children]
       .map((riga) => ({ entrata: valore(riga, "entrata"), uscita: valore(riga, "uscita") || null }))
       .filter((intervallo) => intervallo.entrata || intervallo.uscita),
-    attivita: [...righeAttivita.children]
-      .map((riga) => ({
-        attivita: valore(riga, "attivita"),
-        durata: valore(riga, "ore"),
-        descrizione: valore(riga, "testo-descrizione"),
-      }))
-      .filter((voce) => voce.durata || voce.descrizione),
+    progetti: [...righeProgetti.children]
+      .map((riga) => ({ progetto: valore(riga, "progetto"), durata: valore(riga, "ore") }))
+      .filter((voce) => voce.durata),
+    descrizione: campoDescrizione.value,
+    localita: sceltaLocalita.value === ALTRA_LOCALITA ? campoLocalitaAltro.value.trim() : sceltaLocalita.value,
     assenze: [...righeAssenze.children]
       .map((riga) => ({ tipo: valore(riga, "tipo"), durata: valore(riga, "ore") }))
       .filter((voce) => voce.durata),
     straordinario: { durata: campoStraordinarioOre.value.trim(), nota: campoStraordinarioNota.value.trim() },
-    note: campoNoteGiorno.value,
   };
+}
+
+function oreRipartite(giorno) {
+  return giorno.progetti.reduce((totale, voce) => totale + (calcoli.minutiDaDurata(voce.durata) ?? 0), 0);
 }
 
 function aggiornaSintesiEditor() {
   const giorno = leggiEditor();
   const adesso = dataEditor === calcoli.oggiIso() ? minutiAdesso() : null;
-  const presenza = calcoli.minutiPresenza(giorno.intervalli, adesso);
+  const lavorate = calcoli.minutiLavorati(giorno.intervalli, adesso);
   const pause = calcoli.pause(giorno.intervalli);
-  const assegnate = giorno.attivita.reduce(
-    (totale, voce) => totale + (calcoli.minutiDaDurata(voce.durata) ?? 0),
-    0
-  );
-  const resto = presenza - assegnate;
+  const assegnate = oreRipartite(giorno);
+  const resto = lavorate - assegnate;
 
-  const parti = [`Presenza <strong>${calcoli.durataInTesto(presenza)}</strong>`];
+  const parti = [`Ore lavorate <strong>${calcoli.durataInTesto(lavorate)}</strong>`];
   if (pause.length) {
     const totalePause = pause.reduce((totale, pausa) => totale + pausa.minuti, 0);
-    parti.push(`pause ${calcoli.durataInTesto(totalePause)}`);
+    parti.push(`pausa ${calcoli.durataInTesto(totalePause)} compresa`);
   }
   sintesiPresenza.innerHTML = parti.join(" · ");
 
-  const attivitaDisponibili = dati.elencoAttivita().some((attivita) => attivita.attiva);
-  senzaAttivita.hidden = attivitaDisponibili || righeAttivita.children.length > 0;
-  bottoneAggiungiAttivita.hidden = !attivitaDisponibili;
+  const progettiDisponibili = dati.elencoProgetti().some((progetto) => progetto.attivo);
+  senzaProgetti.hidden = progettiDisponibili || righeProgetti.children.length > 0;
+  bottoneAggiungiProgetto.hidden = !progettiDisponibili;
 
-  if (!presenza && !assegnate) {
-    sintesiAttivita.textContent = "";
+  if (!lavorate && !assegnate) {
+    sintesiProgetti.textContent = "";
   } else if (resto === 0) {
-    sintesiAttivita.innerHTML = `Tutte le ore ripartite: <strong>${calcoli.durataInTesto(assegnate)}</strong>`;
+    sintesiProgetti.innerHTML = `Tutte le ore ripartite: <strong>${calcoli.durataInTesto(assegnate)}</strong>`;
   } else {
     const testo =
       resto > 0
         ? `da ripartire <strong>${calcoli.durataInTesto(resto)}</strong>`
-        : `<strong>${calcoli.durataInTesto(-resto)}</strong> più della presenza`;
-    sintesiAttivita.innerHTML = `Assegnate ${calcoli.durataInTesto(assegnate)} · <span class="da-ripartire">${testo}</span>`;
+        : `<strong>${calcoli.durataInTesto(-resto)}</strong> più delle ore lavorate`;
+    sintesiProgetti.innerHTML = `Ripartite ${calcoli.durataInTesto(assegnate)} · <span class="da-ripartire">${testo}</span>`;
   }
-  bottoneAssegnaResto.hidden = !(resto > 0 && attivitaDisponibili);
+  bottoneAssegnaResto.hidden = !(resto > 0 && progettiDisponibili);
   if (resto > 0) bottoneAssegnaResto.textContent = `Assegna il resto (${calcoli.durataInTesto(resto)})`;
 }
 
@@ -428,6 +456,11 @@ function segnaModifica() {
 editor.addEventListener("input", segnaModifica);
 editor.addEventListener("change", segnaModifica);
 
+sceltaLocalita.addEventListener("change", () => {
+  campoLocalitaAltro.hidden = sceltaLocalita.value !== ALTRA_LOCALITA;
+  if (!campoLocalitaAltro.hidden) campoLocalitaAltro.focus();
+});
+
 elemento("aggiungi-intervallo").addEventListener("click", () => {
   const riga = rigaIntervallo();
   righeIntervalli.append(riga);
@@ -435,11 +468,11 @@ elemento("aggiungi-intervallo").addEventListener("click", () => {
   segnaModifica();
 });
 
-bottoneAggiungiAttivita.addEventListener("click", () => {
-  const usate = new Set([...righeAttivita.querySelectorAll(".attivita")].map((s) => s.value));
-  const prima = opzioniAttivita("").find((opzione) => !usate.has(opzione.valore)) ?? opzioniAttivita("")[0];
-  const riga = rigaAttivita({ attivita: prima?.valore ?? "", durata: "", descrizione: "" });
-  righeAttivita.append(riga);
+bottoneAggiungiProgetto.addEventListener("click", () => {
+  const usati = new Set([...righeProgetti.querySelectorAll(".progetto")].map((s) => s.value));
+  const primo = opzioniProgetti("").find((opzione) => !usati.has(opzione.valore)) ?? opzioniProgetti("")[0];
+  const riga = rigaProgetto({ progetto: primo?.valore ?? "", durata: "" });
+  righeProgetti.append(riga);
   riga.querySelector("select").focus();
   segnaModifica();
 });
@@ -447,22 +480,19 @@ bottoneAggiungiAttivita.addEventListener("click", () => {
 bottoneAssegnaResto.addEventListener("click", () => {
   const giorno = leggiEditor();
   const adesso = dataEditor === calcoli.oggiIso() ? minutiAdesso() : null;
-  const resto =
-    calcoli.minutiPresenza(giorno.intervalli, adesso) -
-    giorno.attivita.reduce((totale, voce) => totale + (calcoli.minutiDaDurata(voce.durata) ?? 0), 0);
+  const resto = calcoli.minutiLavorati(giorno.intervalli, adesso) - oreRipartite(giorno);
   if (resto <= 0) return;
 
   // Una riga già scelta ma ancora senza ore riceve il resto; altrimenti se ne aggiunge una.
-  const vuota = [...righeAttivita.children].find((riga) => !riga.querySelector(".ore").value.trim());
+  const vuota = [...righeProgetti.children].find((riga) => !riga.querySelector(".ore").value.trim());
   if (vuota) {
     vuota.querySelector(".ore").value = calcoli.durataInTesto(resto);
   } else {
-    const ultima = righeAttivita.lastElementChild?.querySelector(".attivita")?.value;
-    righeAttivita.append(
-      rigaAttivita({
-        attivita: ultima ?? opzioniAttivita("")[0]?.valore ?? "",
+    const ultimo = righeProgetti.lastElementChild?.querySelector(".progetto")?.value;
+    righeProgetti.append(
+      rigaProgetto({
+        progetto: ultimo ?? opzioniProgetti("")[0]?.valore ?? "",
         durata: calcoli.durataInTesto(resto),
-        descrizione: "",
       })
     );
   }
@@ -478,7 +508,10 @@ elemento("aggiungi-assenza").addEventListener("click", () => {
 
 elemento("giornata-intera").addEventListener("click", () => {
   const previste = dati.orePreviste(dataEditor);
-  const riga = rigaAssenza({ tipo: dati.elencoAssenze()[0]?.codice ?? "", durata: previste ? calcoli.durataInTesto(previste) : "" });
+  const riga = rigaAssenza({
+    tipo: dati.elencoAssenze()[0]?.codice ?? "",
+    durata: previste ? calcoli.durataInTesto(previste) : "",
+  });
   righeAssenze.append(riga);
   (previste ? riga.querySelector("select") : riga.querySelector(".ore")).focus();
   segnaModifica();
@@ -490,9 +523,9 @@ editor.addEventListener("submit", async (evento) => {
   if (errori.length) return mostraErrori(errori);
   mostraErrori([]);
   caricaEditor(dataEditor);
-  const stato = dati.statoMese(calcoli.meseDi(dataEditor));
+  const stato = dati.statoAnno(dataEditor.slice(0, 4));
   esitoSalvataggio.textContent = stato?.modificatoDopo
-    ? "Salvata. Il mese era già stato esportato: esportalo di nuovo."
+    ? "Salvata. Il file dell'anno era già stato esportato: esportalo di nuovo."
     : "Salvata.";
   disegna();
 });
@@ -512,7 +545,7 @@ function disegnaOggi() {
   dataOggi.textContent = giornoCompleto.format(dataLocale(oggi));
   const giorno = dati.giorno(oggi);
   const aperto = calcoli.intervalloAperto(giorno.intervalli);
-  const presenza = calcoli.minutiPresenza(giorno.intervalli, minutiAdesso());
+  const lavorate = calcoli.minutiLavorati(giorno.intervalli, minutiAdesso());
 
   if (aperto) {
     statoTimbratura.innerHTML = `Al lavoro dalle <strong>${aperto.entrata}</strong>`;
@@ -528,7 +561,7 @@ function disegnaOggi() {
   }
 
   const parti = [];
-  if (presenza) parti.push(`Presenza oggi ${calcoli.durataInTesto(presenza)}`);
+  if (lavorate) parti.push(`Ore lavorate oggi ${calcoli.durataInTesto(lavorate)}`);
   const calendario = calcoli.tipoGiorno(oggi, dati.configurazione().patrono);
   if (calendario.nome) parti.push(calendario.nome);
   riassuntoOggi.textContent = parti.join(" · ");
@@ -565,7 +598,7 @@ function disegnaAvvisi() {
   };
 
   if (!dati.profiloCompleto() && vistaAttiva !== "impostazioni") {
-    avviso("Inserisci nome e cognome: finiscono nel file Excel del mese.", "Apri", () => mostraVista("impostazioni"));
+    avviso("Inserisci nome e cognome: finiscono nel timesheet Excel.", "Apri", () => mostraVista("impostazioni"));
   }
   for (const data of dati.giorniConUscitaMancante().slice(0, 3)) {
     avviso(`Manca l'orario di uscita di ${giornoEsteso.format(dataLocale(data))}.`, "Sistema", () => apriGiorno(data));
@@ -596,6 +629,7 @@ function etichetta(testo, classe = "") {
 
 function disegnaMese() {
   const mese = meseVisualizzato;
+  const anno = mese.slice(0, 4);
   const oggi = calcoli.oggiIso();
   const configurazione = dati.configurazione();
   const giorni = dati.giorniDelMese(mese);
@@ -603,10 +637,10 @@ function disegnaMese() {
   const totali = calcoli.totaliMese(giorni);
 
   etichettaMese.textContent = maiuscola(meseLungo.format(dataLocale(`${mese}-01`)));
-  oreMese.textContent = calcoli.durataInTesto(totali.presenza);
-  const resto = totali.presenza - totali.attivita;
-  scomposizioneMese.textContent = totali.presenza
-    ? `Assegnate ad attività ${calcoli.durataInTesto(totali.attivita)}` +
+  oreMese.textContent = calcoli.durataInTesto(totali.lavorate);
+  const resto = totali.lavorate - totali.progetti;
+  scomposizioneMese.textContent = totali.lavorate
+    ? `Ripartite sui progetti ${calcoli.durataInTesto(totali.progetti)}` +
       (resto > 0 ? ` · da ripartire ${calcoli.durataInTesto(resto)}` : "")
     : "";
 
@@ -614,20 +648,21 @@ function disegnaMese() {
   kpiAssenze.textContent = calcoli.durataInTesto(totali.assenze);
   kpiStraordinari.textContent = calcoli.durataInTesto(totali.straordinario);
 
-  const stato = dati.statoMese(mese);
+  bottoneEsportaAnno.textContent = `Esporta l'Excel del ${anno}`;
+  const stato = dati.statoAnno(anno);
   statoInvio.classList.toggle("da-rifare", Boolean(stato?.modificatoDopo));
   statoInvio.textContent = !stato
-    ? "Il file non è ancora stato esportato."
+    ? `Il timesheet del ${anno} non è ancora stato esportato.`
     : stato.modificatoDopo
-      ? `Modificato dopo l'esportazione del ${momento.format(new Date(stato.inviato))}: esportalo di nuovo e rimanda il file.`
-      : `Esportato il ${momento.format(new Date(stato.inviato))}.`;
+      ? `Modificato dopo l'esportazione del ${momento.format(new Date(stato.esportato))}: esportalo di nuovo e rimanda il file.`
+      : `Esportato il ${momento.format(new Date(stato.esportato))}.`;
 
-  // Ore per attività, dalla più grande.
-  const perAttivita = [...totali.perAttivita].sort((a, b) => b[1] - a[1]);
-  const massimo = perAttivita[0]?.[1] ?? 0;
-  attivitaMese.replaceChildren(
-    ...(perAttivita.length
-      ? perAttivita.map(([nome, minuti]) => {
+  // Ore per progetto, dal più grande.
+  const perProgetto = [...totali.perProgetto].sort((a, b) => b[1] - a[1]);
+  const massimo = perProgetto[0]?.[1] ?? 0;
+  progettiMese.replaceChildren(
+    ...(perProgetto.length
+      ? perProgetto.map(([nome, minuti]) => {
           const voce = crea("li");
           const traccia = crea("span", "traccia");
           const riempimento = crea("span", "riempimento");
@@ -639,7 +674,7 @@ function disegnaMese() {
           voce.append(nomeBarra, traccia, crea("span", "valore-barra", calcoli.durataInTesto(minuti)));
           return voce;
         })
-      : [crea("li", "senza-dati", "Nessuna ora assegnata ad attività in questo mese.")])
+      : [crea("li", "senza-dati", "Nessuna ora ripartita sui progetti in questo mese.")])
   );
 
   const codici = new Map(configurazione.assenze.map((assenza) => [assenza.codice, assenza.nome]));
@@ -665,8 +700,10 @@ function disegnaMese() {
       );
 
       const corpo = crea("span", "corpo-giorno");
-      const orari = giorno.intervalli.map((i) => `${i.entrata}–${i.uscita ?? "…"}`).join(" · ");
+      const { dalle, alle } = calcoli.estremi(giorno.intervalli);
+      const orari = dalle ? [`${dalle}–${alle ?? "…"}`, giorno.localita].filter(Boolean).join(" · ") : "";
       corpo.append(crea("span", orari ? "orari-giorno" : "orari-giorno tenue", orari || calendario.nome || "—"));
+      if (giorno.descrizione) corpo.append(crea("span", "riassunto-giorno", giorno.descrizione));
 
       const dettagli = crea("span", "dettagli-giorno");
       if (orari && calendario.nome) dettagli.append(etichetta(calendario.nome));
@@ -680,12 +717,12 @@ function disegnaMese() {
       }
       if (calcoli.intervalloAperto(giorno.intervalli) && data < oggi) {
         dettagli.append(etichetta("Manca l'uscita", "attenzione"));
-      } else if (totaliGiorno.presenza && totaliGiorno.daRipartire !== 0 && configurazione.attivita.length) {
+      } else if (totaliGiorno.lavorate && totaliGiorno.daRipartire !== 0 && configurazione.progetti.length) {
         dettagli.append(
           etichetta(
             totaliGiorno.daRipartire > 0
               ? `Da ripartire ${calcoli.durataInTesto(totaliGiorno.daRipartire)}`
-              : "Attività oltre la presenza",
+              : "Progetti oltre le ore lavorate",
             "attenzione"
           )
         );
@@ -693,15 +730,14 @@ function disegnaMese() {
       if (lavorativo && data < oggi && !giorno.intervalli.length && !giorno.assenze.length) {
         dettagli.append(etichetta("Da completare", "attenzione"));
       }
-      if (giorno.note) dettagli.append(etichetta("Nota"));
       if (dettagli.children.length) corpo.append(dettagli);
 
-      const ore = crea("span", "ore-giorno", totaliGiorno.presenza ? calcoli.durataInTesto(totaliGiorno.presenza) : "");
+      const ore = crea("span", "ore-giorno", totaliGiorno.lavorate ? calcoli.durataInTesto(totaliGiorno.lavorate) : "");
       bottone.append(colonnaData, corpo, ore);
       bottone.setAttribute(
         "aria-label",
         `${giornoEsteso.format(dataLocale(data))}${orari ? `, ${orari}` : ""}` +
-          (totaliGiorno.presenza ? `, ${calcoli.durataInTesto(totaliGiorno.presenza)} ore` : "")
+          (totaliGiorno.lavorate ? `, ${calcoli.durataInTesto(totaliGiorno.lavorate)} ore` : "")
       );
       voce.append(bottone);
       return voce;
@@ -719,12 +755,12 @@ elemento("mese-successivo").addEventListener("click", () => {
   disegna();
 });
 
-elemento("esporta-mese").addEventListener("click", async () => {
-  const mese = meseVisualizzato;
+bottoneEsportaAnno.addEventListener("click", async () => {
+  const anno = meseVisualizzato.slice(0, 4);
   if (!dati.profiloCompleto()) {
     return mostraErrori(["Prima inserisci nome e cognome in Impostazioni: finiscono nel file."]);
   }
-  const giorni = dati.giorniDelMese(mese);
+  const giorni = dati.giorniDellAnno(anno);
   const senzaUscita = giorni.filter((giorno) => calcoli.intervalloAperto(giorno.intervalli));
   if (senzaUscita.length) {
     return mostraErrori(
@@ -736,17 +772,17 @@ elemento("esporta-mese").addEventListener("click", async () => {
   }
   if (!giorni.length) {
     const confermato = await chiediConferma(
-      "Esportare un mese vuoto?",
-      "In questo mese non c'è nessuna giornata registrata.",
+      "Esportare un anno vuoto?",
+      `Nel ${anno} non c'è nessuna giornata registrata.`,
       "Esporta"
     );
     if (!confermato) return;
   }
 
   const profilo = dati.profilo();
-  const byte = esportazione.fileDelMese({ configurazione: dati.configurazione(), profilo, mese, giorni });
-  scarica(byte, esportazione.nomeFileMese(profilo, mese), TIPO_XLSX);
-  await dati.segnaInviato(mese);
+  const byte = esportazione.fileDellAnno({ configurazione: dati.configurazione(), profilo, anno, giorni });
+  scarica(byte, esportazione.nomeFileAnno(profilo, anno), TIPO_XLSX);
+  await dati.segnaEsportato(anno);
   mostraErrori([]);
   disegna();
 });
@@ -757,7 +793,9 @@ function disegnaProfilo() {
   const profilo = dati.profilo();
   campoNome.value = profilo.nome;
   campoCognome.value = profilo.cognome;
+  campoPosizione.value = profilo.posizione;
   campoMatricola.value = profilo.matricola;
+  disegnaLocalitaProfilo();
   orePrevisteContenitore.replaceChildren(
     ...GIORNI_BREVI.map((nome, indice) => {
       const minuti = profilo.orePreviste[indice] ?? 0;
@@ -772,11 +810,25 @@ function disegnaProfilo() {
   );
 }
 
+function disegnaLocalitaProfilo() {
+  const scelta = dati.profilo().localita;
+  const elenco = dati.elencoLocalita();
+  // Una località abituale tolta dall'elenco resta scelta finché non se ne indica un'altra.
+  const voci = scelta && !elenco.includes(scelta) ? [...elenco, scelta] : elenco;
+  riempiSelettore(
+    sceltaLocalitaProfilo,
+    voci.map((nome) => ({ valore: nome, testo: nome })),
+    scelta || elenco[0]
+  );
+}
+
 formProfilo.addEventListener("submit", async (evento) => {
   evento.preventDefault();
   const errori = await dati.salvaProfilo({
     nome: campoNome.value,
     cognome: campoCognome.value,
+    posizione: campoPosizione.value,
+    localita: sceltaLocalitaProfilo.value,
     matricola: campoMatricola.value,
     orePreviste: [...orePrevisteContenitore.querySelectorAll("input")].map((campoOre) => campoOre.value),
   });
@@ -808,31 +860,43 @@ function disegnaConfigurazione() {
   if (document.activeElement !== campoAzienda) campoAzienda.value = configurazione.azienda;
   if (document.activeElement !== campoPatrono) campoPatrono.value = patronoLeggibile(configurazione.patrono);
 
-  const attivita = dati.elencoAttivita();
-  elencoAttivitaConfig.replaceChildren(
-    ...(attivita.length
-      ? attivita.map((voceAttivita) => {
+  const progetti = dati.elencoProgetti();
+  elencoProgettiConfig.replaceChildren(
+    ...(progetti.length
+      ? progetti.map((progetto) => {
           const voce = crea("li");
-          const nome = crea("span", "nome-categoria", voceAttivita.nome);
-          nome.classList.toggle("disattivata", !voceAttivita.attiva);
+          const nome = crea("span", "nome-categoria", progetto.nome);
+          nome.classList.toggle("disattivata", !progetto.attivo);
           const azioni = crea("span", "azioni-elenco");
           azioni.append(
             creaBottone("Rinomina", "minimo", () =>
-              avviaRinomina(voce, voceAttivita.nome, (nuovo) => dati.rinominaAttivita(voceAttivita.nome, nuovo))
+              avviaRinomina(voce, progetto.nome, (nuovo) => dati.rinominaProgetto(progetto.nome, nuovo))
             ),
-            creaBottone(voceAttivita.attiva ? "Disattiva" : "Riattiva", "minimo", async () =>
-              applica(await dati.impostaAttivaAttivita(voceAttivita.nome, !voceAttivita.attiva))
+            creaBottone(progetto.attivo ? "Disattiva" : "Riattiva", "minimo", async () =>
+              applica(await dati.impostaAttivoProgetto(progetto.nome, !progetto.attivo))
             )
           );
-          if (!voceAttivita.usata) {
+          if (!progetto.usato) {
             azioni.append(
-              creaBottone("Elimina", "minimo pericolo", async () => applica(await dati.eliminaAttivita(voceAttivita.nome)))
+              creaBottone("Elimina", "minimo pericolo", async () => applica(await dati.eliminaProgetto(progetto.nome)))
             );
           }
           voce.append(nome, azioni);
           return voce;
         })
-      : [crea("li", "senza-dati", "Nessuna attività: aggiungine una o importa la configurazione.")])
+      : [crea("li", "senza-dati", "Nessun progetto: aggiungine uno o importa la configurazione.")])
+  );
+
+  elencoLocalitaConfig.replaceChildren(
+    ...dati.elencoLocalita().map((nomeLocalita) => {
+      const voce = crea("li");
+      const azioni = crea("span", "azioni-elenco");
+      azioni.append(
+        creaBottone("Elimina", "minimo pericolo", async () => applica(await dati.eliminaLocalita(nomeLocalita)))
+      );
+      voce.append(crea("span", "nome-categoria", nomeLocalita), azioni);
+      return voce;
+    })
   );
 
   elencoAssenzeConfig.replaceChildren(
@@ -873,10 +937,19 @@ elemento("form-azienda").addEventListener("submit", async (evento) => {
   await applica(await dati.salvaDatiAzienda(campoAzienda.value, patronoDaTesto(campoPatrono.value)));
 });
 
-elemento("form-attivita").addEventListener("submit", async (evento) => {
+elemento("form-progetto").addEventListener("submit", async (evento) => {
   evento.preventDefault();
-  const campoNuova = elemento("nuova-attivita");
-  if (await applica(await dati.aggiungiAttivita(campoNuova.value))) campoNuova.value = "";
+  const campoNuovo = elemento("nuovo-progetto");
+  if (await applica(await dati.aggiungiProgetto(campoNuovo.value))) campoNuovo.value = "";
+});
+
+elemento("form-localita").addEventListener("submit", async (evento) => {
+  evento.preventDefault();
+  const campoNuova = elemento("nuova-localita");
+  if (await applica(await dati.aggiungiLocalita(campoNuova.value))) {
+    campoNuova.value = "";
+    disegnaLocalitaProfilo();
+  }
 });
 
 elemento("form-assenza").addEventListener("submit", async (evento) => {
@@ -896,15 +969,16 @@ elemento("importa-configurazione").addEventListener("change", async (evento) => 
   const contenuto = await leggiJson(file);
   if (!contenuto) return mostraErrori(["Il file non è leggibile: non contiene una configurazione."]);
 
-  if (dati.elencoAttivita().length) {
+  if (dati.elencoProgetti().length) {
     const confermato = await chiediConferma(
       "Sostituire la configurazione?",
-      `Attività, codici di assenza e azienda verranno presi da «${file.name}». Le attività già usate nelle tue giornate restano, disattivate se il file non le contiene.`,
+      `Ente, progetti, località e codici di assenza verranno presi da «${file.name}». I progetti già usati nelle tue giornate restano, disattivati se il file non li contiene.`,
       "Sostituisci"
     );
     if (!confermato) return;
   }
   if (await applica(await dati.importaConfigurazione(contenuto))) {
+    disegnaLocalitaProfilo();
     if (dataEditor && !editorModificato) caricaEditor(dataEditor);
   }
 });
@@ -983,21 +1057,31 @@ interruttoreUfficio.addEventListener("change", async () => {
 
 function disegnaUfficio() {
   const configurazione = dati.configurazione();
-  const attive = configurazione.attivita.filter((attivita) => attivita.attiva).length;
+  const attivi = configurazione.progetti.filter((progetto) => progetto.attivo).length;
   sintesiConfigurazione.textContent =
-    `${configurazione.azienda || "Azienda non indicata"} · ${attive} ${attive === 1 ? "attività attiva" : "attività attive"} · ` +
-    `${configurazione.assenze.length} codici di assenza` +
+    `${configurazione.azienda || "Ente non indicato"} · ${attivi} ${attivi === 1 ? "progetto attivo" : "progetti attivi"} · ` +
+    `${configurazione.localita.length} località · ${configurazione.assenze.length} codici di assenza` +
     (configurazione.patrono ? ` · patrono il ${patronoLeggibile(configurazione.patrono)}` : "");
 
-  const pieno = Boolean(riepilogoCaricato?.righe.length);
-  titoloMeseRiepilogo.hidden = !pieno;
-  contenitoreRiepilogo.hidden = !pieno;
-  bottoneScaricaRiepilogo.hidden = !pieno;
-  bottoneSvuotaRiepilogo.hidden = !pieno;
+  const pieno = Boolean(fileUfficio?.file.length);
+  for (const nodo of [campoMeseRiepilogo, titoloMeseRiepilogo, contenitoreRiepilogo, bottoneScaricaRiepilogo, bottoneSvuotaRiepilogo]) {
+    nodo.hidden = !pieno;
+  }
   if (!pieno) return;
 
-  const { mese, righe, tipiAssenza, attivita } = riepilogoCaricato;
-  titoloMeseRiepilogo.textContent = `${maiuscola(meseLungo.format(dataLocale(`${mese}-01`)))} · ${righe.length} ${
+  const mesi = esportazione.mesiConDati(fileUfficio.file);
+  if (!mesi.includes(meseUfficio)) meseUfficio = mesi[0] ?? `${fileUfficio.anno}-01`;
+  riempiSelettore(
+    sceltaMeseRiepilogo,
+    calcoli.mesiDellAnno(fileUfficio.anno).map((mese) => ({
+      valore: mese,
+      testo: maiuscola(meseLungo.format(dataLocale(`${mese}-01`))) + (mesi.includes(mese) ? "" : " (vuoto)"),
+    })),
+    meseUfficio
+  );
+
+  const { righe, tipiAssenza, progetti } = esportazione.riepilogoUfficio(fileUfficio.file, meseUfficio);
+  titoloMeseRiepilogo.textContent = `${maiuscola(meseLungo.format(dataLocale(`${meseUfficio}-01`)))} · ${righe.length} ${
     righe.length === 1 ? "dipendente" : "dipendenti"
   }`;
 
@@ -1007,7 +1091,7 @@ function disegnaUfficio() {
     "Ore lavorate",
     ...tipiAssenza.map((tipo) => tipo.codice),
     "Straord.",
-    ...attivita,
+    ...progetti,
   ];
   const testa = crea("thead");
   const rigaTesta = crea("tr");
@@ -1022,25 +1106,26 @@ function disegnaUfficio() {
 
   const durata = (minuti) => (minuti ? calcoli.durataInTesto(minuti) : "—");
   const corpo = crea("tbody");
-  const somme = { giorni: 0, presenza: 0, straordinario: 0, assenze: new Map(), attivita: new Map() };
+  const somme = { giorni: 0, lavorate: 0, straordinario: 0, assenze: new Map(), progetti: new Map() };
   for (const riga of righe) {
     const tr = crea("tr");
     const nome = crea("td", "", `${riga.profilo.cognome} ${riga.profilo.nome}`.trim());
-    if (riga.profilo.matricola) nome.append(crea("small", "", `matr. ${riga.profilo.matricola}`));
-    tr.append(nome, crea("td", "", String(riga.totali.giorniPresenza)), crea("td", "", durata(riga.totali.presenza)));
+    const sotto = [riga.profilo.posizione, riga.profilo.matricola && `matr. ${riga.profilo.matricola}`].filter(Boolean);
+    if (sotto.length) nome.append(crea("small", "", sotto.join(" · ")));
+    tr.append(nome, crea("td", "", String(riga.totali.giorniPresenza)), crea("td", "", durata(riga.totali.lavorate)));
     for (const tipo of tipiAssenza) {
       const minuti = riga.totali.perAssenza.get(tipo.codice) ?? 0;
       somme.assenze.set(tipo.codice, (somme.assenze.get(tipo.codice) ?? 0) + minuti);
       tr.append(crea("td", "", durata(minuti)));
     }
     tr.append(crea("td", "", durata(riga.totali.straordinario)));
-    for (const nomeAttivita of attivita) {
-      const minuti = riga.totali.perAttivita.get(nomeAttivita) ?? 0;
-      somme.attivita.set(nomeAttivita, (somme.attivita.get(nomeAttivita) ?? 0) + minuti);
+    for (const nomeProgetto of progetti) {
+      const minuti = riga.totali.perProgetto.get(nomeProgetto) ?? 0;
+      somme.progetti.set(nomeProgetto, (somme.progetti.get(nomeProgetto) ?? 0) + minuti);
       tr.append(crea("td", "", durata(minuti)));
     }
     somme.giorni += riga.totali.giorniPresenza;
-    somme.presenza += riga.totali.presenza;
+    somme.lavorate += riga.totali.lavorate;
     somme.straordinario += riga.totali.straordinario;
     corpo.append(tr);
   }
@@ -1050,10 +1135,10 @@ function disegnaUfficio() {
   rigaPiede.append(
     crea("td", "", "Totale"),
     crea("td", "", String(somme.giorni)),
-    crea("td", "", durata(somme.presenza)),
+    crea("td", "", durata(somme.lavorate)),
     ...tipiAssenza.map((tipo) => crea("td", "", durata(somme.assenze.get(tipo.codice)))),
     crea("td", "", durata(somme.straordinario)),
-    ...attivita.map((nomeAttivita) => crea("td", "", durata(somme.attivita.get(nomeAttivita))))
+    ...progetti.map((nomeProgetto) => crea("td", "", durata(somme.progetti.get(nomeProgetto))))
   );
   piede.append(rigaPiede);
   tabellaRiepilogo.replaceChildren(testa, corpo, piede);
@@ -1068,40 +1153,46 @@ elemento("scarica-configurazione").addEventListener("click", () => {
 });
 
 elemento("importa-file").addEventListener("change", async (evento) => {
-  const file = [...(evento.target.files ?? [])];
+  const scelti = [...(evento.target.files ?? [])];
   evento.target.value = "";
-  if (!file.length) return;
+  if (!scelti.length) return;
 
   const errori = [];
   const letti = [];
-  for (const singolo of file) {
+  for (const singolo of scelti) {
     try {
-      letti.push(await esportazione.leggiFileMese(new Uint8Array(await singolo.arrayBuffer()), `«${singolo.name}»`));
+      letti.push(await esportazione.leggiFile(new Uint8Array(await singolo.arrayBuffer()), `«${singolo.name}»`));
     } catch (errore) {
       errori.push(errore.message);
     }
   }
 
-  const [riepilogo, erroriRiepilogo] = esportazione.riepilogoUfficio([...(riepilogoCaricato?.righe ?? []), ...letti]);
-  if (erroriRiepilogo.length) errori.push(...erroriRiepilogo);
-  else riepilogoCaricato = riepilogo;
+  const [uniti, erroriUnione] = esportazione.unisciFile([...(fileUfficio?.file ?? []), ...letti]);
+  if (erroriUnione.length) errori.push(...erroriUnione);
+  else fileUfficio = uniti;
 
   erroriFile.replaceChildren(...errori.map((messaggio) => crea("li", "", messaggio)));
   erroriFile.hidden = errori.length === 0;
   disegna();
 });
 
+sceltaMeseRiepilogo.addEventListener("change", () => {
+  meseUfficio = sceltaMeseRiepilogo.value;
+  disegna();
+});
+
 bottoneSvuotaRiepilogo.addEventListener("click", () => {
-  riepilogoCaricato = null;
+  fileUfficio = null;
+  meseUfficio = null;
   erroriFile.hidden = true;
   disegna();
 });
 
 bottoneScaricaRiepilogo.addEventListener("click", () => {
-  if (!riepilogoCaricato) return;
+  if (!fileUfficio) return;
   scarica(
-    esportazione.fileRiepilogo(riepilogoCaricato, dati.configurazione()),
-    esportazione.nomeFileRiepilogo(riepilogoCaricato.mese),
+    esportazione.fileRiepilogo(esportazione.riepilogoUfficio(fileUfficio.file, meseUfficio), dati.configurazione()),
+    esportazione.nomeFileRiepilogo(meseUfficio),
     TIPO_XLSX
   );
 });

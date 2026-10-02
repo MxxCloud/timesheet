@@ -15,10 +15,24 @@ export const ASSENZE_INIZIALI = [
   { codice: "FS", nome: "Festività" },
 ];
 
+// I nomi veri (la sede dell'ente, per esempio) arrivano con il file di
+// configurazione dell'amministrazione: il codice è pubblico e non li contiene.
+export const LOCALITA_INIZIALI = ["Sede", "Smart working"];
+
 // Lunedì … domenica, in minuti: otto ore dal lunedì al venerdì.
 const ORE_PREVISTE_INIZIALI = [480, 480, 480, 480, 480, 0, 0];
 
-const LUNGHEZZE = { nome: 60, matricola: 20, azienda: 80, attivita: 60, assenza: 40, testo: 200, note: 500 };
+const LUNGHEZZE = {
+  nome: 60,
+  matricola: 20,
+  posizione: 80,
+  azienda: 80,
+  progetto: 60,
+  localita: 60,
+  assenza: 40,
+  nota: 200,
+  descrizione: 1000,
+};
 const CODICE_ASSENZA = /^[A-Z0-9]{1,6}$/;
 
 const FORMATO_CONFIGURAZIONE = "timesheet-configurazione";
@@ -30,12 +44,33 @@ const memoria = {
   giorni: new Map(),
   profilo: null,
   configurazione: null,
-  mesi: {},
+  esportazioni: {},
   preferenze: {},
 };
 let archivio = null;
 
 const copia = (valore) => structuredClone(valore);
+
+function profiloIniziale() {
+  return {
+    nome: "",
+    cognome: "",
+    matricola: "",
+    posizione: "",
+    localita: "",
+    orePreviste: [...ORE_PREVISTE_INIZIALI],
+  };
+}
+
+function configurazioneIniziale() {
+  return {
+    azienda: "",
+    patrono: "",
+    progetti: [],
+    localita: [...LOCALITA_INIZIALI],
+    assenze: copia(ASSENZE_INIZIALI),
+  };
+}
 
 // --- archiviazione -------------------------------------------------------
 
@@ -82,19 +117,9 @@ export async function inizializza() {
   for (const giorno of await leggiTutto("giorni")) memoria.giorni.set(giorno.data, giorno);
 
   const impostazioni = new Map((await leggiTutto("impostazioni")).map((r) => [r.chiave, r.valore]));
-  memoria.profilo = impostazioni.get("profilo") ?? {
-    nome: "",
-    cognome: "",
-    matricola: "",
-    orePreviste: [...ORE_PREVISTE_INIZIALI],
-  };
-  memoria.configurazione = impostazioni.get("configurazione") ?? {
-    azienda: "",
-    patrono: "",
-    attivita: [],
-    assenze: copia(ASSENZE_INIZIALI),
-  };
-  memoria.mesi = impostazioni.get("mesi") ?? {};
+  memoria.profilo = { ...profiloIniziale(), ...impostazioni.get("profilo") };
+  memoria.configurazione = { ...configurazioneIniziale(), ...impostazioni.get("configurazione") };
+  memoria.esportazioni = impostazioni.get("esportazioni") ?? {};
   memoria.preferenze = impostazioni.get("preferenze") ?? {};
 }
 
@@ -118,6 +143,8 @@ function durata(voce) {
 }
 
 // --- profilo -------------------------------------------------------------
+
+const GIORNI_SETTIMANA = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"];
 
 export function profilo() {
   return copia(memoria.profilo);
@@ -143,10 +170,18 @@ function validaProfilo(grezzo) {
   });
 
   if (errori.length) return [null, errori];
-  return [{ nome, cognome, matricola: testoCorto(grezzo?.matricola, LUNGHEZZE.matricola), orePreviste }, []];
+  return [
+    {
+      nome,
+      cognome,
+      matricola: testoCorto(grezzo?.matricola, LUNGHEZZE.matricola),
+      posizione: testoCorto(grezzo?.posizione, LUNGHEZZE.posizione),
+      localita: testoCorto(grezzo?.localita, LUNGHEZZE.localita),
+      orePreviste,
+    },
+    [],
+  ];
 }
-
-const GIORNI_SETTIMANA = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"];
 
 export async function salvaProfilo(grezzo) {
   const [valido, errori] = validaProfilo(grezzo);
@@ -159,6 +194,11 @@ export async function salvaProfilo(grezzo) {
 /** Le ore previste in un giorno, secondo il profilo: servono per le assenze a giornata intera. */
 export function orePreviste(data) {
   return memoria.profilo.orePreviste?.[calcoli.giornoSettimana(data)] ?? 0;
+}
+
+/** La località di una giornata senza località: quella abituale, o la prima dell'elenco. */
+export function localitaPredefinita() {
+  return memoria.profilo.localita || memoria.configurazione.localita[0] || "";
 }
 
 // --- configurazione dell'ufficio -----------------------------------------
@@ -176,15 +216,26 @@ function validaConfigurazione(grezza) {
     errori.push("Il giorno del patrono va indicato come giorno/mese, per esempio 24/06.");
   }
 
-  const attivita = [];
-  for (const voce of Array.isArray(grezza?.attivita) ? grezza.attivita : []) {
-    const nome = testoCorto(typeof voce === "string" ? voce : voce?.nome, LUNGHEZZE.attivita);
+  const progetti = [];
+  for (const voce of Array.isArray(grezza?.progetti) ? grezza.progetti : []) {
+    const nome = testoCorto(typeof voce === "string" ? voce : voce?.nome, LUNGHEZZE.progetto);
     if (!nome) continue;
-    if (attivita.some((a) => a.nome.toLowerCase() === nome.toLowerCase())) {
-      errori.push(`L'attività «${nome}» compare due volte.`);
+    if (progetti.some((p) => p.nome.toLowerCase() === nome.toLowerCase())) {
+      errori.push(`Il progetto «${nome}» compare due volte.`);
       continue;
     }
-    attivita.push({ nome, attiva: voce?.attiva !== false });
+    progetti.push({ nome, attivo: voce?.attivo !== false });
+  }
+
+  const localita = [];
+  for (const voce of Array.isArray(grezza?.localita) ? grezza.localita : LOCALITA_INIZIALI) {
+    const nome = testoCorto(voce, LUNGHEZZE.localita);
+    if (!nome) continue;
+    if (localita.some((l) => l.toLowerCase() === nome.toLowerCase())) {
+      errori.push(`La località «${nome}» compare due volte.`);
+      continue;
+    }
+    localita.push(nome);
   }
 
   const assenze = [];
@@ -203,7 +254,7 @@ function validaConfigurazione(grezza) {
   }
 
   if (errori.length) return [null, errori];
-  return [{ azienda, patrono, attivita, assenze }, []];
+  return [{ azienda, patrono, progetti, localita, assenze }, []];
 }
 
 async function salvaConfigurazione(nuova) {
@@ -211,9 +262,16 @@ async function salvaConfigurazione(nuova) {
   await salvaImpostazione("configurazione", nuova);
 }
 
-function attivitaUsata(nome) {
+async function cambiaConfigurazione(modifiche) {
+  const [nuova, errori] = validaConfigurazione({ ...memoria.configurazione, ...modifiche });
+  if (errori.length) return errori;
+  await salvaConfigurazione(nuova);
+  return [];
+}
+
+function progettoUsato(nome) {
   for (const giorno of memoria.giorni.values()) {
-    if (giorno.attivita.some((voce) => voce.attivita === nome)) return true;
+    if (giorno.progetti.some((voce) => voce.progetto === nome)) return true;
   }
   return false;
 }
@@ -225,12 +283,16 @@ function assenzaUsata(codice) {
   return false;
 }
 
-/** Le attività con il numero di giornate in cui compaiono. */
-export function elencoAttivita() {
-  return memoria.configurazione.attivita.map((attivita) => ({
-    ...attivita,
-    usata: attivitaUsata(attivita.nome),
+/** I progetti, ciascuno con l'indicazione se ha ore registrate. */
+export function elencoProgetti() {
+  return memoria.configurazione.progetti.map((progetto) => ({
+    ...progetto,
+    usato: progettoUsato(progetto.nome),
   }));
+}
+
+export function elencoLocalita() {
+  return [...memoria.configurazione.localita];
 }
 
 export function elencoAssenze() {
@@ -241,91 +303,81 @@ export function elencoAssenze() {
 }
 
 export async function salvaDatiAzienda(azienda, patrono) {
-  const [nuova, errori] = validaConfigurazione({ ...memoria.configurazione, azienda, patrono });
-  if (errori.length) return errori;
-  await salvaConfigurazione(nuova);
-  return [];
+  return cambiaConfigurazione({ azienda, patrono });
 }
 
-export async function aggiungiAttivita(grezzo) {
-  const nome = testoCorto(grezzo, LUNGHEZZE.attivita);
-  if (!nome) return ["Il nome dell'attività non può essere vuoto."];
-  const [nuova, errori] = validaConfigurazione({
-    ...memoria.configurazione,
-    attivita: [...memoria.configurazione.attivita, { nome, attiva: true }],
+export async function aggiungiProgetto(grezzo) {
+  const nome = testoCorto(grezzo, LUNGHEZZE.progetto);
+  if (!nome) return ["Il nome del progetto non può essere vuoto."];
+  return cambiaConfigurazione({
+    progetti: [...memoria.configurazione.progetti, { nome, attivo: true }],
   });
-  if (errori.length) return errori;
-  await salvaConfigurazione(nuova);
-  return [];
 }
 
-export async function rinominaAttivita(vecchio, grezzo) {
-  const nome = testoCorto(grezzo, LUNGHEZZE.attivita);
-  if (!nome) return ["Il nome dell'attività non può essere vuoto."];
-  const [nuova, errori] = validaConfigurazione({
-    ...memoria.configurazione,
-    attivita: memoria.configurazione.attivita.map((a) => (a.nome === vecchio ? { ...a, nome } : a)),
+export async function rinominaProgetto(vecchio, grezzo) {
+  const nome = testoCorto(grezzo, LUNGHEZZE.progetto);
+  if (!nome) return ["Il nome del progetto non può essere vuoto."];
+  const errori = await cambiaConfigurazione({
+    progetti: memoria.configurazione.progetti.map((p) => (p.nome === vecchio ? { ...p, nome } : p)),
   });
   if (errori.length) return errori;
-  await salvaConfigurazione(nuova);
 
-  // Rinominare senza aggiornare le giornate lascerebbe ore senza attività.
+  // Rinominare senza aggiornare le giornate lascerebbe ore senza progetto.
   for (const giorno of memoria.giorni.values()) {
-    if (!giorno.attivita.some((voce) => voce.attivita === vecchio)) continue;
-    for (const voce of giorno.attivita) if (voce.attivita === vecchio) voce.attivita = nome;
+    if (!giorno.progetti.some((voce) => voce.progetto === vecchio)) continue;
+    for (const voce of giorno.progetti) if (voce.progetto === vecchio) voce.progetto = nome;
     await scrivi("giorni", giorno);
   }
   return [];
 }
 
-export async function impostaAttivaAttivita(nome, attiva) {
-  await salvaConfigurazione({
-    ...memoria.configurazione,
-    attivita: memoria.configurazione.attivita.map((a) =>
-      a.nome === nome ? { ...a, attiva: attiva === true } : a
+export async function impostaAttivoProgetto(nome, attivo) {
+  return cambiaConfigurazione({
+    progetti: memoria.configurazione.progetti.map((p) =>
+      p.nome === nome ? { ...p, attivo: attivo === true } : p
     ),
   });
-  return [];
 }
 
-export async function eliminaAttivita(nome) {
-  if (attivitaUsata(nome)) {
-    return [`«${nome}» ha ore registrate: disattivala invece di eliminarla, così le ore restano.`];
+export async function eliminaProgetto(nome) {
+  if (progettoUsato(nome)) {
+    return [`«${nome}» ha ore registrate: disattivalo invece di eliminarlo, così le ore restano.`];
   }
-  await salvaConfigurazione({
-    ...memoria.configurazione,
-    attivita: memoria.configurazione.attivita.filter((a) => a.nome !== nome),
+  return cambiaConfigurazione({
+    progetti: memoria.configurazione.progetti.filter((p) => p.nome !== nome),
   });
-  return [];
+}
+
+export async function aggiungiLocalita(grezzo) {
+  const nome = testoCorto(grezzo, LUNGHEZZE.localita);
+  if (!nome) return ["Il nome della località non può essere vuoto."];
+  return cambiaConfigurazione({ localita: [...memoria.configurazione.localita, nome] });
+}
+
+/** Togliere una località dall'elenco non tocca le giornate: il nome resta scritto dove c'è. */
+export async function eliminaLocalita(nome) {
+  return cambiaConfigurazione({
+    localita: memoria.configurazione.localita.filter((l) => l !== nome),
+  });
 }
 
 export async function aggiungiAssenza(codice, nome) {
-  const [nuova, errori] = validaConfigurazione({
-    ...memoria.configurazione,
+  return cambiaConfigurazione({
     assenze: [...memoria.configurazione.assenze, { codice, nome }],
   });
-  if (errori.length) return errori;
-  await salvaConfigurazione(nuova);
-  return [];
 }
 
 export async function rinominaAssenza(codice, nome) {
-  const [nuova, errori] = validaConfigurazione({
-    ...memoria.configurazione,
+  return cambiaConfigurazione({
     assenze: memoria.configurazione.assenze.map((a) => (a.codice === codice ? { codice, nome } : a)),
   });
-  if (errori.length) return errori;
-  await salvaConfigurazione(nuova);
-  return [];
 }
 
 export async function eliminaAssenza(codice) {
   if (assenzaUsata(codice)) return [`Il codice «${codice}» è usato in qualche giornata: non si può eliminare.`];
-  await salvaConfigurazione({
-    ...memoria.configurazione,
+  return cambiaConfigurazione({
     assenze: memoria.configurazione.assenze.filter((a) => a.codice !== codice),
   });
-  return [];
 }
 
 export function esportaConfigurazione() {
@@ -338,8 +390,8 @@ export function esportaConfigurazione() {
 
 /**
  * Sostituisce la configurazione con quella preparata dall'amministrazione.
- * Le attività e le assenze già usate nelle giornate ma assenti dal file
- * restano, disattivate: le ore registrate non devono perdere il loro nome.
+ * I progetti e le assenze già usati nelle giornate ma assenti dal file
+ * restano, i progetti disattivati: le ore registrate non devono perdere il nome.
  */
 export async function importaConfigurazione(contenuto) {
   if (contenuto?.formato !== FORMATO_CONFIGURAZIONE) {
@@ -350,9 +402,9 @@ export async function importaConfigurazione(contenuto) {
   const [nuova, errori] = validaConfigurazione(contenuto);
   if (errori.length) return errori;
 
-  for (const vecchia of memoria.configurazione.attivita) {
-    const presente = nuova.attivita.some((a) => a.nome === vecchia.nome);
-    if (!presente && attivitaUsata(vecchia.nome)) nuova.attivita.push({ nome: vecchia.nome, attiva: false });
+  for (const vecchio of memoria.configurazione.progetti) {
+    const presente = nuova.progetti.some((p) => p.nome === vecchio.nome);
+    if (!presente && progettoUsato(vecchio.nome)) nuova.progetti.push({ nome: vecchio.nome, attivo: false });
   }
   for (const vecchia of memoria.configurazione.assenze) {
     const presente = nuova.assenze.some((a) => a.codice === vecchia.codice);
@@ -375,6 +427,10 @@ export function giorniDelMese(mese) {
     .map(copia);
 }
 
+export function giorniDellAnno(anno) {
+  return giorniDelMese(`${anno}-`);
+}
+
 export function tuttiIGiorni() {
   return [...memoria.giorni.values()].sort((a, b) => a.data.localeCompare(b.data)).map(copia);
 }
@@ -383,23 +439,21 @@ export function tuttiIGiorni() {
  * Controlla una giornata. Le durate arrivano come testo dal modulo
  * («durata»: «4:30») oppure come minuti dai backup («minuti»: 270).
  */
-function validaGiorno(data, grezzo, { apertoAmmesso, nomiAttivita, codiciAssenza }) {
+function validaGiorno(data, grezzo, { apertoAmmesso, nomiProgetti, codiciAssenza, localita }) {
   const errori = [];
   const [intervalli, erroriIntervalli] = calcoli.validaIntervalli(grezzo?.intervalli ?? [], {
     apertoAmmesso,
   });
   errori.push(...erroriIntervalli);
 
-  const attivita = [];
-  for (const [indice, voce] of (grezzo?.attivita ?? []).entries()) {
-    const posizione = `Attività ${indice + 1}`;
-    const nome = nomiAttivita.get(String(voce?.attivita ?? "").trim().toLowerCase());
+  const progetti = [];
+  for (const [indice, voce] of (grezzo?.progetti ?? []).entries()) {
+    const posizione = `Progetto ${indice + 1}`;
+    const nome = nomiProgetti.get(String(voce?.progetto ?? "").trim().toLowerCase());
     const minuti = durata(voce);
-    if (!nome) errori.push(`${posizione}: scegli un'attività dall'elenco.`);
+    if (!nome) errori.push(`${posizione}: scegli un progetto dall'elenco.`);
     if (!minuti) errori.push(`${posizione}: indica le ore, per esempio 2:30.`);
-    if (nome && minuti) {
-      attivita.push({ attivita: nome, minuti, descrizione: testoCorto(voce?.descrizione, LUNGHEZZE.testo) });
-    }
+    if (nome && minuti) progetti.push({ progetto: nome, minuti });
   }
 
   const assenze = [];
@@ -413,7 +467,7 @@ function validaGiorno(data, grezzo, { apertoAmmesso, nomiAttivita, codiciAssenza
   }
 
   let straordinario = null;
-  const notaStraordinario = testoCorto(grezzo?.straordinario?.nota, LUNGHEZZE.testo);
+  const notaStraordinario = testoCorto(grezzo?.straordinario?.nota, LUNGHEZZE.nota);
   const vuoto =
     grezzo?.straordinario?.minuti === undefined &&
     !String(grezzo?.straordinario?.durata ?? "").trim();
@@ -424,16 +478,29 @@ function validaGiorno(data, grezzo, { apertoAmmesso, nomiAttivita, codiciAssenza
   }
 
   if (errori.length) return [null, errori];
+
+  // Chi ha lavorato ha lavorato da qualche parte: senza indicazione vale la
+  // località abituale. Senza presenza la località non ha senso e si toglie.
+  const scritta = testoCorto(grezzo?.localita, LUNGHEZZE.localita);
   return [
-    { data, intervalli, attivita, assenze, straordinario, note: testoLungo(grezzo?.note, LUNGHEZZE.note) },
+    {
+      data,
+      intervalli,
+      progetti,
+      descrizione: testoLungo(grezzo?.descrizione, LUNGHEZZE.descrizione),
+      localita: intervalli.length ? scritta || localita : "",
+      assenze,
+      straordinario,
+    },
     [],
   ];
 }
 
 function regoleAttuali() {
   return {
-    nomiAttivita: new Map(memoria.configurazione.attivita.map((a) => [a.nome.toLowerCase(), a.nome])),
+    nomiProgetti: new Map(memoria.configurazione.progetti.map((p) => [p.nome.toLowerCase(), p.nome])),
     codiciAssenza: new Set(memoria.configurazione.assenze.map((a) => a.codice)),
+    localita: localitaPredefinita(),
   };
 }
 
@@ -445,7 +512,7 @@ async function registraGiorno(giornoValido) {
     memoria.giorni.set(giornoValido.data, giornoValido);
     await scrivi("giorni", giornoValido);
   }
-  await segnaModificato(calcoli.meseDi(giornoValido.data));
+  await segnaModificato(giornoValido.data.slice(0, 4));
 }
 
 /** Salva una giornata intera; una giornata senza dati viene tolta dall'archivio. */
@@ -514,27 +581,25 @@ export function giorniConUscitaMancante(oggi = calcoli.oggiIso()) {
     .sort();
 }
 
-/** Un mese con almeno una giornata registrata, dal più recente. */
-export function mesiConDati() {
-  return [...new Set([...memoria.giorni.keys()].map(calcoli.meseDi))].sort().reverse();
+// --- esportazione dell'anno ----------------------------------------------
+
+export function statoAnno(anno) {
+  return memoria.esportazioni[anno] ? { ...memoria.esportazioni[anno] } : null;
 }
 
-// --- invio del mese ------------------------------------------------------
-
-export function statoMese(mese) {
-  return memoria.mesi[mese] ? { ...memoria.mesi[mese] } : null;
+export async function segnaEsportato(anno, quando = new Date()) {
+  memoria.esportazioni = {
+    ...memoria.esportazioni,
+    [anno]: { esportato: quando.toISOString(), modificatoDopo: false },
+  };
+  await salvaImpostazione("esportazioni", memoria.esportazioni);
 }
 
-export async function segnaInviato(mese, quando = new Date()) {
-  memoria.mesi = { ...memoria.mesi, [mese]: { inviato: quando.toISOString(), modificatoDopo: false } };
-  await salvaImpostazione("mesi", memoria.mesi);
-}
-
-async function segnaModificato(mese) {
-  const stato = memoria.mesi[mese];
+async function segnaModificato(anno) {
+  const stato = memoria.esportazioni[anno];
   if (!stato || stato.modificatoDopo) return;
-  memoria.mesi = { ...memoria.mesi, [mese]: { ...stato, modificatoDopo: true } };
-  await salvaImpostazione("mesi", memoria.mesi);
+  memoria.esportazioni = { ...memoria.esportazioni, [anno]: { ...stato, modificatoDopo: true } };
+  await salvaImpostazione("esportazioni", memoria.esportazioni);
 }
 
 // --- preferenze ----------------------------------------------------------
@@ -557,7 +622,7 @@ export function esportaBackup(quando = new Date()) {
     esportato: quando.toISOString(),
     profilo: profilo(),
     configurazione: configurazione(),
-    mesi: copia(memoria.mesi),
+    esportazioni: copia(memoria.esportazioni),
     giorni: tuttiIGiorni(),
   };
 }
@@ -591,14 +656,13 @@ export async function importaBackup(contenuto) {
 
   const profiloGrezzo = contenuto.profilo ?? {};
   const [nuovoProfilo, erroriProfilo] =
-    profiloGrezzo.nome || profiloGrezzo.cognome
-      ? validaProfilo(profiloGrezzo)
-      : [{ nome: "", cognome: "", matricola: "", orePreviste: [...ORE_PREVISTE_INIZIALI] }, []];
+    profiloGrezzo.nome || profiloGrezzo.cognome ? validaProfilo(profiloGrezzo) : [profiloIniziale(), []];
   if (erroriProfilo.length) return erroriProfilo;
 
   const regole = {
-    nomiAttivita: new Map(nuovaConfigurazione.attivita.map((a) => [a.nome.toLowerCase(), a.nome])),
+    nomiProgetti: new Map(nuovaConfigurazione.progetti.map((p) => [p.nome.toLowerCase(), p.nome])),
     codiciAssenza: new Set(nuovaConfigurazione.assenze.map((a) => a.codice)),
+    localita: nuovoProfilo.localita || nuovaConfigurazione.localita[0] || "",
     apertoAmmesso: true,
   };
   const errori = [];
@@ -615,10 +679,10 @@ export async function importaBackup(contenuto) {
   }
   if (errori.length) return errori.slice(0, 10);
 
-  const mesi = {};
-  for (const [mese, stato] of Object.entries(contenuto.mesi ?? {})) {
-    if (calcoli.meseValido(mese) && typeof stato?.inviato === "string") {
-      mesi[mese] = { inviato: stato.inviato, modificatoDopo: stato.modificatoDopo === true };
+  const esportazioni = {};
+  for (const [anno, stato] of Object.entries(contenuto.esportazioni ?? {})) {
+    if (/^\d{4}$/.test(anno) && typeof stato?.esportato === "string") {
+      esportazioni[anno] = { esportato: stato.esportato, modificatoDopo: stato.modificatoDopo === true };
     }
   }
 
@@ -629,7 +693,7 @@ export async function importaBackup(contenuto) {
   for (const valido of giorni) giorniDeposito.put(valido);
   impostazioniDeposito.put({ chiave: "profilo", valore: nuovoProfilo });
   impostazioniDeposito.put({ chiave: "configurazione", valore: nuovaConfigurazione });
-  impostazioniDeposito.put({ chiave: "mesi", valore: mesi });
+  impostazioniDeposito.put({ chiave: "esportazioni", valore: esportazioni });
   await new Promise((risolvi, rifiuta) => {
     transazione.oncomplete = risolvi;
     transazione.onerror = () => rifiuta(transazione.error);
@@ -639,6 +703,6 @@ export async function importaBackup(contenuto) {
   memoria.giorni = new Map(giorni.map((g) => [g.data, g]));
   memoria.profilo = nuovoProfilo;
   memoria.configurazione = nuovaConfigurazione;
-  memoria.mesi = mesi;
+  memoria.esportazioni = esportazioni;
   return [];
 }

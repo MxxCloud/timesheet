@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Timesheet</title>
-  <meta name="description" content="Presenze, attività e assenze da registrare ogni giorno, con il foglio Excel del mese pronto da inviare.">
+  <meta name="description" content="Presenze, attività, località e progetti di ogni giorno, con il timesheet Excel dell'anno pronto da inviare.">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1d6b74">
   <link rel="icon" href="icona-192.png" type="image/png">
@@ -68,7 +68,7 @@
         <p class="totale-grande"><strong id="ore-mese">—</strong></p>
         <p id="scomposizione-mese" class="scomposizione"></p>
         <div class="esportazione-mese">
-          <button type="button" id="esporta-mese" class="principale-scheda">Esporta l'Excel del mese</button>
+          <button type="button" id="esporta-anno" class="principale-scheda">Esporta l'Excel dell'anno</button>
           <p id="stato-invio" class="stato-invio"></p>
         </div>
       </div>
@@ -88,9 +88,9 @@
         </div>
       </div>
 
-      <section class="scheda riquadro" aria-labelledby="titolo-attivita-mese">
-        <h2 id="titolo-attivita-mese">Ore per attività</h2>
-        <ul id="attivita-mese" class="barre"></ul>
+      <section class="scheda riquadro" aria-labelledby="titolo-progetti-mese">
+        <h2 id="titolo-progetti-mese">Ore per progetto</h2>
+        <ul id="progetti-mese" class="barre"></ul>
       </section>
 
       <section class="scheda riquadro" aria-labelledby="titolo-giorni">
@@ -113,6 +113,14 @@
           <input type="text" id="profilo-cognome" maxlength="60" autocomplete="family-name" required>
         </div>
         <div class="campo">
+          <label for="profilo-posizione">Posizione/funzione</label>
+          <input type="text" id="profilo-posizione" maxlength="80" placeholder="es. Ricercatrice / Project manager">
+        </div>
+        <div class="campo">
+          <label for="profilo-localita">Località abituale</label>
+          <select id="profilo-localita"></select>
+        </div>
+        <div class="campo">
           <label for="profilo-matricola">Matricola <span class="facoltativo">(facoltativa)</span></label>
           <input type="text" id="profilo-matricola" maxlength="20">
         </div>
@@ -128,7 +136,7 @@
 
       <details class="scheda gestione" id="pannello-configurazione">
         <summary>Configurazione dell'ufficio</summary>
-        <p class="nota-pannello">Attività e codici di assenza li prepara l'amministrazione e li manda come file: importalo qui. Puoi anche modificarli a mano.</p>
+        <p class="nota-pannello">Ente, progetti, località e codici di assenza li prepara l'amministrazione e li manda come file: importalo qui. Puoi anche modificarli a mano.</p>
         <label class="ripristina">
           <input type="file" id="importa-configurazione" accept=".json,application/json">
           <span>Importa il file della configurazione</span>
@@ -136,7 +144,7 @@
 
         <form id="form-azienda" class="riga-aggiunta" novalidate>
           <div class="campo">
-            <label for="azienda">Azienda</label>
+            <label for="azienda">Ente</label>
             <input type="text" id="azienda" maxlength="80">
           </div>
           <div class="campo campo-stretto">
@@ -146,13 +154,21 @@
           <button type="submit">Salva</button>
         </form>
 
-        <h3 class="sottotitolo">Attività e commesse</h3>
-        <form id="form-attivita" class="riga-aggiunta" novalidate>
-          <label for="nuova-attivita" class="etichetta-nascosta">Nuova attività</label>
-          <input type="text" id="nuova-attivita" maxlength="60" placeholder="es. Progetto Ponte">
+        <h3 class="sottotitolo">Progetti</h3>
+        <form id="form-progetto" class="riga-aggiunta" novalidate>
+          <label for="nuovo-progetto" class="etichetta-nascosta">Nuovo progetto</label>
+          <input type="text" id="nuovo-progetto" maxlength="60" placeholder="es. Progetto Ponte">
           <button type="submit">Aggiungi</button>
         </form>
-        <ul id="elenco-attivita" class="elenco-categorie"></ul>
+        <ul id="elenco-progetti" class="elenco-categorie"></ul>
+
+        <h3 class="sottotitolo">Località di svolgimento</h3>
+        <form id="form-localita" class="riga-aggiunta" novalidate>
+          <label for="nuova-localita" class="etichetta-nascosta">Nuova località</label>
+          <input type="text" id="nuova-localita" maxlength="60" placeholder="es. Smart working">
+          <button type="submit">Aggiungi</button>
+        </form>
+        <ul id="elenco-localita" class="elenco-categorie"></ul>
 
         <h3 class="sottotitolo">Codici di assenza</h3>
         <form id="form-assenza" class="riga-aggiunta" novalidate>
@@ -201,14 +217,14 @@
     <section id="vista-ufficio" class="vista" aria-label="Ufficio">
       <section class="scheda riquadro" aria-labelledby="titolo-configurazione-ufficio">
         <h2 id="titolo-configurazione-ufficio">1 · Configurazione per i dipendenti</h2>
-        <p class="aiuto">Prepara azienda, attività e codici di assenza in Impostazioni → Configurazione dell'ufficio. Poi scarica il file e mandalo a ogni dipendente, che lo importa dallo stesso pannello. Così tutti usano gli stessi nomi.</p>
+        <p class="aiuto">Prepara ente, progetti, località e codici di assenza in Impostazioni → Configurazione dell'ufficio. Poi scarica il file e mandalo a ogni dipendente, che lo importa dallo stesso pannello. Così tutti usano gli stessi nomi.</p>
         <p id="sintesi-configurazione" class="sintesi"></p>
         <button type="button" id="scarica-configurazione" class="principale-scheda">Scarica la configurazione</button>
       </section>
 
       <section class="scheda riquadro" aria-labelledby="titolo-riepilogo">
         <h2 id="titolo-riepilogo">2 · Riepilogo del mese</h2>
-        <p class="aiuto">Importa i file Excel che i dipendenti ti hanno mandato, anche tutti insieme. Restano solo in questa pagina finché non la chiudi.</p>
+        <p class="aiuto">Importa i file Excel dell'anno che i dipendenti ti hanno mandato, anche tutti insieme, poi scegli il mese. I file restano solo in questa pagina finché non la chiudi.</p>
         <div class="riga-backup">
           <label class="ripristina">
             <input type="file" id="importa-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple>
@@ -217,6 +233,10 @@
           <button type="button" id="svuota-riepilogo" class="secondario-scheda" hidden>Svuota l'elenco</button>
         </div>
         <ul id="errori-file" class="errori" hidden></ul>
+        <div class="campo campo-mese" id="campo-mese-riepilogo" hidden>
+          <label for="mese-riepilogo">Mese</label>
+          <select id="mese-riepilogo"></select>
+        </div>
         <p id="titolo-mese-riepilogo" class="etichetta-grande" hidden></p>
         <div class="contenitore-tabella" id="contenitore-riepilogo" hidden>
           <table id="tabella-riepilogo" class="tabella"></table>
@@ -226,7 +246,8 @@
     </section>
   </main>
 
-  <!-- L'editor della giornata è uno solo: si sposta fra «Oggi» e la vista del giorno. -->
+  <!-- L'editor della giornata è uno solo: si sposta fra «Oggi» e la vista del giorno.
+       Le sezioni seguono le colonne del timesheet: orari, attività, località, progetti. -->
   <form id="editor" class="scheda editor" novalidate>
     <div class="testa-editor">
       <p id="titolo-editor" class="titolo-form">Giornata</p>
@@ -243,13 +264,29 @@
     </fieldset>
 
     <fieldset class="sezione-editor">
-      <legend>Attività</legend>
-      <ul id="righe-attivita" class="righe"></ul>
-      <p id="senza-attivita" class="aiuto" hidden>Nessuna attività in elenco: aggiungile in Impostazioni → Configurazione dell'ufficio, o importa il file dell'amministrazione.</p>
+      <legend>Attività svolte</legend>
+      <label for="descrizione-giorno" class="etichetta-nascosta">Attività svolte</label>
+      <textarea id="descrizione-giorno" rows="3" maxlength="1000" placeholder="Riunioni, documenti, incontri: più dettagli possibile, servono alla rendicontazione."></textarea>
+    </fieldset>
+
+    <fieldset class="sezione-editor">
+      <legend>Località di svolgimento</legend>
+      <div class="riga-localita">
+        <label for="localita-giorno" class="etichetta-nascosta">Località</label>
+        <select id="localita-giorno"></select>
+        <label for="localita-altro" class="etichetta-nascosta">Altra località</label>
+        <input type="text" id="localita-altro" maxlength="60" placeholder="es. Roma, sede del partner" hidden>
+      </div>
+    </fieldset>
+
+    <fieldset class="sezione-editor">
+      <legend>Progetti</legend>
+      <ul id="righe-progetti" class="righe"></ul>
+      <p id="senza-progetti" class="aiuto" hidden>Nessun progetto in elenco: aggiungili in Impostazioni → Configurazione dell'ufficio, o importa il file dell'amministrazione.</p>
       <div class="piede-sezione">
-        <button type="button" id="aggiungi-attivita" class="aggiungi">+ Attività</button>
+        <button type="button" id="aggiungi-progetto" class="aggiungi">+ Progetto</button>
         <button type="button" id="assegna-resto" class="aggiungi" hidden>Assegna il resto</button>
-        <p id="sintesi-attivita" class="sintesi"></p>
+        <p id="sintesi-progetti" class="sintesi"></p>
       </div>
     </fieldset>
 
@@ -264,6 +301,7 @@
 
     <fieldset class="sezione-editor">
       <legend>Straordinario</legend>
+      <p class="aiuto">Si annota a parte: non compare nel timesheet Excel.</p>
       <div class="riga-straordinario">
         <div class="campo campo-ore">
           <label for="straordinario-ore">Ore</label>
@@ -275,11 +313,6 @@
         </div>
       </div>
     </fieldset>
-
-    <div class="campo">
-      <label for="note-giorno">Note della giornata</label>
-      <textarea id="note-giorno" rows="2" maxlength="500"></textarea>
-    </div>
 
     <div class="azioni-form">
       <button type="submit" id="salva-giorno">Salva la giornata</button>

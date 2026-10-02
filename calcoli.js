@@ -1,5 +1,6 @@
 // Regole del timesheet che non toccano né l'archivio né la pagina: orari,
-// durate, controlli sugli intervalli, totali e calendario delle festività.
+// durate, controlli sugli intervalli, ore lavorate, totali e calendario delle
+// festività.
 // Stanno qui da sole perché così si provano in Node senza un browser.
 
 export const MINUTI_GIORNO = 24 * 60;
@@ -41,6 +42,10 @@ export function meseSpostato(mese, passo) {
   const [anno, numero] = mese.split("-").map(Number);
   const data = new Date(anno, numero - 1 + passo, 1);
   return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export function mesiDellAnno(anno) {
+  return Array.from({ length: 12 }, (_, indice) => `${anno}-${String(indice + 1).padStart(2, "0")}`);
 }
 
 /** 0 = lunedì … 6 = domenica: la settimana del calendario italiano. */
@@ -179,25 +184,40 @@ export function validaIntervalli(grezzi, { apertoAmmesso = false } = {}) {
 }
 
 /**
- * Minuti di presenza. Un intervallo aperto conta fino ad `adesso` (minuti
- * dalla mezzanotte) se lo si passa, altrimenti non conta: per un giorno già
- * chiuso non ha senso, e per oggi lo si vuole vedere crescere.
+ * Le ore lavorate di una giornata, come le conta il timesheet dell'ufficio:
+ * dall'ultima uscita si toglie la prima entrata, e le pause in mezzo restano
+ * comprese. Un intervallo aperto conta fino ad `adesso` (minuti dalla
+ * mezzanotte) se lo si passa, altrimenti la giornata finisce all'ultima uscita
+ * registrata.
  */
-export function minutiPresenza(intervalli, adesso = null) {
-  let totale = 0;
+export function minutiLavorati(intervalli, adesso = null) {
+  let inizio = null;
+  let fine = null;
   for (const intervallo of intervalli ?? []) {
     const entrata = minutiDaOrario(intervallo.entrata);
+    if (entrata === null) continue;
+    inizio = inizio === null ? entrata : Math.min(inizio, entrata);
     const uscita =
       intervallo.uscita === null || intervallo.uscita === undefined
         ? adesso
         : minutiDaOrario(intervallo.uscita);
-    if (entrata === null || uscita === null || uscita <= entrata) continue;
-    totale += uscita - entrata;
+    if (uscita !== null && uscita > entrata) fine = fine === null ? uscita : Math.max(fine, uscita);
   }
-  return totale;
+  return inizio === null || fine === null || fine <= inizio ? 0 : fine - inizio;
 }
 
-/** Le pause sono i buchi fra un intervallo e il successivo. */
+/** Prima entrata e ultima uscita: le colonne «dalle» e «alle» del timesheet. */
+export function estremi(intervalli) {
+  const chiusi = (intervalli ?? []).filter((i) => i.entrata && i.uscita);
+  const entrate = (intervalli ?? []).map((i) => minutiDaOrario(i.entrata)).filter((m) => m !== null);
+  const uscite = chiusi.map((i) => minutiDaOrario(i.uscita)).filter((m) => m !== null);
+  return {
+    dalle: entrate.length ? orarioDaMinuti(Math.min(...entrate)) : null,
+    alle: uscite.length ? orarioDaMinuti(Math.max(...uscite)) : null,
+  };
+}
+
+/** Le pause sono i buchi fra un intervallo e il successivo: si mostrano, non si tolgono. */
 export function pause(intervalli) {
   const chiusi = (intervalli ?? []).filter((i) => i.uscita);
   const risultato = [];
@@ -221,64 +241,76 @@ function somma(elenco, campo = "minuti") {
   return (elenco ?? []).reduce((totale, voce) => totale + (Number(voce?.[campo]) || 0), 0);
 }
 
+/**
+ * Una giornata: timbrature, ore ripartite sui progetti, descrizione
+ * dell'attività svolta, località, assenze e straordinario annotato a mano.
+ */
 export function giornoVuoto(data) {
-  return { data, intervalli: [], attivita: [], assenze: [], straordinario: null, note: "" };
+  return {
+    data,
+    intervalli: [],
+    progetti: [],
+    descrizione: "",
+    localita: "",
+    assenze: [],
+    straordinario: null,
+  };
 }
 
+/** La località da sola non è un dato: senza nient'altro la giornata è vuota. */
 export function giornoSenzaDati(giorno) {
   return (
     !giorno ||
     (!giorno.intervalli?.length &&
-      !giorno.attivita?.length &&
+      !giorno.progetti?.length &&
       !giorno.assenze?.length &&
       !giorno.straordinario &&
-      !String(giorno.note ?? "").trim())
+      !String(giorno.descrizione ?? "").trim())
   );
 }
 
 /**
- * I conti di una giornata. «Da ripartire» è la presenza che non è ancora stata
- * assegnata a un'attività: se è negativa, si sono assegnate più ore di quelle
- * lavorate.
+ * I conti di una giornata. «Da ripartire» sono le ore lavorate non ancora
+ * assegnate a un progetto: se è negativa, se ne sono assegnate di più.
  */
 export function totaliGiorno(giorno, adesso = null) {
-  const presenza = minutiPresenza(giorno?.intervalli, adesso);
-  const attivita = somma(giorno?.attivita);
+  const lavorate = minutiLavorati(giorno?.intervalli, adesso);
+  const progetti = somma(giorno?.progetti);
   return {
-    presenza,
-    attivita,
+    lavorate,
+    progetti,
     assenze: somma(giorno?.assenze),
     straordinario: Number(giorno?.straordinario?.minuti) || 0,
-    daRipartire: presenza - attivita,
+    daRipartire: lavorate - progetti,
   };
 }
 
-/** I totali di un insieme di giorni, con le ripartizioni per attività e per assenza. */
+/** I totali di un insieme di giorni, con le ripartizioni per progetto e per assenza. */
 export function totaliMese(giorni) {
-  const perAttivita = new Map();
+  const perProgetto = new Map();
   const perAssenza = new Map();
   const totali = {
-    presenza: 0,
-    attivita: 0,
+    lavorate: 0,
+    progetti: 0,
     assenze: 0,
     straordinario: 0,
     giorniPresenza: 0,
     giorniAssenza: 0,
-    perAttivita,
+    perProgetto,
     perAssenza,
   };
 
   for (const giorno of giorni ?? []) {
     const delGiorno = totaliGiorno(giorno);
-    totali.presenza += delGiorno.presenza;
-    totali.attivita += delGiorno.attivita;
+    totali.lavorate += delGiorno.lavorate;
+    totali.progetti += delGiorno.progetti;
     totali.assenze += delGiorno.assenze;
     totali.straordinario += delGiorno.straordinario;
-    if (delGiorno.presenza > 0) totali.giorniPresenza += 1;
+    if (delGiorno.lavorate > 0) totali.giorniPresenza += 1;
     if (giorno.assenze?.length) totali.giorniAssenza += 1;
 
-    for (const voce of giorno.attivita ?? []) {
-      perAttivita.set(voce.attivita, (perAttivita.get(voce.attivita) ?? 0) + voce.minuti);
+    for (const voce of giorno.progetti ?? []) {
+      perProgetto.set(voce.progetto, (perProgetto.get(voce.progetto) ?? 0) + voce.minuti);
     }
     for (const voce of giorno.assenze ?? []) {
       perAssenza.set(voce.tipo, (perAssenza.get(voce.tipo) ?? 0) + voce.minuti);
