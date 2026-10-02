@@ -95,13 +95,25 @@ Ne seguono tre cose:
 
 Non basta aprire `index.html` con un doppio clic: il browser blocca i moduli
 JavaScript caricati da file locali. Serve un server statico qualsiasi, per
-esempio:
+esempio, dalla cartella del repository:
 
 ```
 python -m http.server 8001
 ```
 
-Poi apri <http://127.0.0.1:8001/timesheet/>.
+Poi apri <http://127.0.0.1:8001/>.
+
+## Pubblicazione
+
+Il sito si pubblica con GitHub Pages: in *Settings → Pages* scegli *Deploy
+from a branch*, ramo `main`, cartella `/ (root)`. L'indirizzo è
+<https://mxxcloud.github.io/timesheet/>, lo stesso di quando la app stava nella
+cartella `timesheet/` del sito principale. Restano quindi validi anche i dati
+già salvati nei browser e le copie già installate, che appartengono a
+quell'indirizzo.
+
+Il file `.nojekyll` nella radice dice a GitHub Pages di pubblicare i file così
+come sono, senza passarli da Jekyll.
 
 ## Prove
 

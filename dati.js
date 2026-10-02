@@ -24,9 +24,8 @@ const CODICE_ASSENZA = /^[A-Z0-9]{1,6}$/;
 const FORMATO_CONFIGURAZIONE = "timesheet-configurazione";
 const FORMATO_BACKUP = "timesheet-backup";
 
-// Come in Budget futuro, i dati stanno in memoria e si riscrivono su IndexedDB
-// a ogni modifica: un anno di giornate è poca cosa, e così letture e totali
-// restano codice sincrono.
+// I dati stanno in memoria e si riscrivono su IndexedDB a ogni modifica: un
+// anno di giornate è poca cosa, e così letture e totali restano codice sincrono.
 const memoria = {
   giorni: new Map(),
   profilo: null,
