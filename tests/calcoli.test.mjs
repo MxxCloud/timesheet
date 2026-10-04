@@ -13,125 +13,36 @@ test("gli orari si leggono nelle forme in cui si scrivono", () => {
   assert.equal(calcoli.orarioDaMinuti(510), "08:30");
 });
 
-test("le durate accettano ore e minuti oppure ore decimali", () => {
-  assert.equal(calcoli.minutiDaDurata("7:30"), 450);
-  assert.equal(calcoli.minutiDaDurata("7,5"), 450);
-  assert.equal(calcoli.minutiDaDurata("7.5"), 450);
-  assert.equal(calcoli.minutiDaDurata("7"), 420);
-  assert.equal(calcoli.minutiDaDurata("0:15"), 15);
-  assert.equal(calcoli.minutiDaDurata("25"), null);
-  assert.equal(calcoli.minutiDaDurata("1:75"), null);
-  assert.equal(calcoli.minutiDaDurata("tre"), null);
+test("le durate si scrivono in ore e minuti, gli orari senza lo zero davanti", () => {
   assert.equal(calcoli.durataInTesto(450), "7:30");
   assert.equal(calcoli.durataInTesto(0), "0:00");
   assert.equal(calcoli.durataInTesto(-30), "−0:30");
+  assert.equal(calcoli.orarioInTesto("09:00"), "9:00");
+  assert.equal(calcoli.orarioInTesto("17:30"), "17:30");
+  assert.equal(calcoli.orarioInTesto(""), "");
 });
 
-test("gli intervalli vengono ordinati e le sovrapposizioni rifiutate", () => {
-  const [ordinati, errori] = calcoli.validaIntervalli([
-    { entrata: "13:30", uscita: "17:30" },
-    { entrata: "8:30", uscita: "12:30" },
-  ]);
-  assert.deepEqual(errori, []);
-  assert.deepEqual(ordinati, [
-    { entrata: "08:30", uscita: "12:30" },
-    { entrata: "13:30", uscita: "17:30" },
-  ]);
+test("ore lavorate di una riga: alle meno dalle, come la formula del foglio", () => {
+  const riga = (dalle, alle) => ({ ...calcoli.giornoVuoto("2026-10-01"), dalle, alle });
+  assert.equal(calcoli.minutiLavorati(riga("09:00", "17:00")), 480);
+  assert.equal(calcoli.minutiLavorati(riga("09:00", "")), 0);
+  assert.equal(calcoli.minutiLavorati(riga("17:00", "09:00")), 0);
+  assert.equal(calcoli.minutiLavorati(undefined), 0);
 
-  const [, sovrapposti] = calcoli.validaIntervalli([
-    { entrata: "8:30", uscita: "12:30" },
-    { entrata: "12:00", uscita: "17:00" },
-  ]);
-  assert.equal(sovrapposti.length, 1);
-  assert.match(sovrapposti[0], /sovrappongono/);
-
-  const [, rovesciato] = calcoli.validaIntervalli([{ entrata: "12:00", uscita: "8:00" }]);
-  assert.match(rovesciato[0], /dopo l'entrata/);
+  const totali = calcoli.totaliMese([riga("09:00", "17:00"), riga("09:00", "13:30"), riga("", "")]);
+  assert.deepEqual(totali, { minuti: 480 + 270, giorniConOre: 2 });
 });
 
-test("solo l'ultimo intervallo può restare aperto, e solo se ammesso", () => {
-  const aperto = [
-    { entrata: "8:30", uscita: "12:30" },
-    { entrata: "13:30", uscita: null },
-  ];
-  assert.deepEqual(calcoli.validaIntervalli(aperto, { apertoAmmesso: true })[1], []);
-  assert.equal(calcoli.validaIntervalli(aperto)[1].length, 1);
-
-  const apertoInMezzo = [
-    { entrata: "8:30", uscita: null },
-    { entrata: "13:30", uscita: "17:00" },
-  ];
-  assert.equal(calcoli.validaIntervalli(apertoInMezzo, { apertoAmmesso: true })[1].length, 1);
-});
-
-test("ore lavorate: dall'ultima uscita alla prima entrata, pausa compresa", () => {
-  const intervalli = [
-    { entrata: "09:00", uscita: "13:00" },
-    { entrata: "14:00", uscita: null },
-  ];
-  // Senza «adesso» la giornata finisce all'ultima uscita registrata.
-  assert.equal(calcoli.minutiLavorati(intervalli), 240);
-  assert.equal(calcoli.minutiLavorati(intervalli, calcoli.minutiDaOrario("16:00")), 420);
-  assert.deepEqual(calcoli.intervalloAperto(intervalli), { entrata: "14:00", uscita: null });
-
-  const chiusi = [
-    { entrata: "09:00", uscita: "13:00" },
-    { entrata: "14:00", uscita: "17:00" },
-  ];
-  assert.equal(calcoli.minutiLavorati(chiusi), 480);
-  assert.deepEqual(calcoli.estremi(chiusi), { dalle: "09:00", alle: "17:00" });
-  assert.deepEqual(calcoli.estremi(intervalli), { dalle: "09:00", alle: "13:00" });
-  assert.deepEqual(calcoli.estremi([]), { dalle: null, alle: null });
-  assert.deepEqual(calcoli.pause(chiusi), [{ inizio: "13:00", fine: "14:00", minuti: 60 }]);
-  assert.equal(calcoli.minutiLavorati([]), 0);
-});
-
-test("i totali del giorno e del mese, per progetto e per assenza", () => {
-  const giorni = [
-    {
-      ...calcoli.giornoVuoto("2026-10-01"),
-      intervalli: [
-        { entrata: "09:00", uscita: "13:00" },
-        { entrata: "14:00", uscita: "17:00" },
-      ],
-      progetti: [
-        { progetto: "Progetto A", minuti: 300 },
-        { progetto: "Amministrazione", minuti: 120 },
-      ],
-      straordinario: { minuti: 60, nota: "chiusura" },
-    },
-    { ...calcoli.giornoVuoto("2026-10-02"), assenze: [{ tipo: "FE", minuti: 480 }] },
-    {
-      ...calcoli.giornoVuoto("2026-10-05"),
-      intervalli: [{ entrata: "09:00", uscita: "13:00" }],
-      progetti: [{ progetto: "Progetto A", minuti: 240 }],
-      assenze: [{ tipo: "PE", minuti: 240 }],
-    },
-  ];
-
-  assert.deepEqual(calcoli.totaliGiorno(giorni[0]), {
-    lavorate: 480,
-    progetti: 420,
-    assenze: 0,
-    straordinario: 60,
-    daRipartire: 60,
-  });
-
-  const mese = calcoli.totaliMese(giorni);
-  assert.equal(mese.lavorate, 720);
-  assert.equal(mese.progetti, 660);
-  assert.equal(mese.assenze, 720);
-  assert.equal(mese.straordinario, 60);
-  assert.equal(mese.giorniPresenza, 2);
-  assert.equal(mese.giorniAssenza, 2);
-  assert.equal(mese.perProgetto.get("Progetto A"), 540);
-  assert.equal(mese.perAssenza.get("FE"), 480);
-  assert.equal(mese.perAssenza.get("PE"), 240);
-});
-
-test("una giornata con la sola località è vuota", () => {
+test("una riga con la sola località è vuota", () => {
   assert.equal(calcoli.giornoSenzaDati({ ...calcoli.giornoVuoto("2026-10-01"), localita: "Sede" }), true);
-  assert.equal(calcoli.giornoSenzaDati({ ...calcoli.giornoVuoto("2026-10-01"), descrizione: "x" }), false);
+  assert.equal(calcoli.giornoSenzaDati({ ...calcoli.giornoVuoto("2026-10-01"), attivita: "x" }), false);
+  assert.equal(calcoli.giornoSenzaDati({ ...calcoli.giornoVuoto("2026-10-01"), dalle: "09:00" }), false);
+});
+
+test("le assenze si riconoscono e si scrivono in maiuscolo", () => {
+  assert.equal(calcoli.assenza(" ferie "), "FERIE");
+  assert.equal(calcoli.assenza("Malattia"), "MALATTIA");
+  assert.equal(calcoli.assenza("ferie e riunione"), null);
 });
 
 test("calendario: Pasqua, festività e giorni della settimana", () => {

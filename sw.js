@@ -7,7 +7,7 @@
 // worker da installare, e il nome nuovo fa cancellare ad "activate" il deposito
 // precedente, così non restano in giro copie morte.
 
-const VERSIONE = "timesheet-v2";
+const VERSIONE = "timesheet-v3";
 
 const RISORSE = [
   "./",

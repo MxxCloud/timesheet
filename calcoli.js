@@ -1,10 +1,8 @@
-// Regole del timesheet che non toccano né l'archivio né la pagina: orari,
-// durate, controlli sugli intervalli, ore lavorate, totali e calendario delle
-// festività.
+// Regole del timesheet che non toccano né l'archivio né la pagina: date,
+// orari, ore lavorate, totali e calendario delle festività.
 // Stanno qui da sole perché così si provano in Node senza un browser.
 
 export const MINUTI_GIORNO = 24 * 60;
-const DURATA_MASSIMA = MINUTI_GIORNO;
 
 // --- date ----------------------------------------------------------------
 
@@ -90,25 +88,10 @@ export function orarioDaMinuti(minuti) {
   return `${String(ore).padStart(2, "0")}:${String(minuti % 60).padStart(2, "0")}`;
 }
 
-/**
- * Una durata scritta come la scrive chi compila un timesheet: «7:30», «7,5»,
- * «7.5» o «7» sono tutte sette ore e mezza o sette ore. Restituisce minuti.
- */
-export function minutiDaDurata(grezzo) {
-  const testo = String(grezzo ?? "").trim();
-  if (!testo) return null;
-
-  const conDuePunti = /^(\d{1,2}):(\d{2})$/.exec(testo);
-  if (conDuePunti) {
-    const minuti = Number(conDuePunti[2]);
-    if (minuti > 59) return null;
-    const totale = Number(conDuePunti[1]) * 60 + minuti;
-    return totale <= DURATA_MASSIMA ? totale : null;
-  }
-
-  if (!/^\d{1,2}(?:[.,]\d{1,2})?$/.test(testo)) return null;
-  const totale = Math.round(Number(testo.replace(",", ".")) * 60);
-  return totale <= DURATA_MASSIMA ? totale : null;
+/** «09:00» → «9:00», come lo mostra il foglio dell'ufficio. */
+export function orarioInTesto(orario) {
+  const minuti = minutiDaOrario(orario);
+  return minuti === null ? "" : `${Math.floor(minuti / 60)}:${String(minuti % 60).padStart(2, "0")}`;
 }
 
 /** Minuti → «7:30». Zero si scrive «0:00», non vuoto: è un dato, non un'assenza. */
@@ -118,205 +101,55 @@ export function durataInTesto(minuti) {
   return `${segno}${Math.floor(assoluto / 60)}:${String(assoluto % 60).padStart(2, "0")}`;
 }
 
-// --- intervalli di presenza ----------------------------------------------
+// --- la giornata ---------------------------------------------------------
 
 /**
- * Controlla gli intervalli di un giorno e li restituisce ordinati.
- * Solo l'ultimo può restare aperto (uscita mancante), e solo se `apertoAmmesso`:
- * è il caso di chi è al lavoro in questo momento.
- */
-export function validaIntervalli(grezzi, { apertoAmmesso = false } = {}) {
-  const errori = [];
-  const intervalli = [];
-
-  for (const [indice, grezzo] of (grezzi ?? []).entries()) {
-    const posizione = `Intervallo ${indice + 1}`;
-    const entrata = minutiDaOrario(grezzo?.entrata);
-    const uscitaVuota = grezzo?.uscita === null || String(grezzo?.uscita ?? "").trim() === "";
-    const uscita = uscitaVuota ? null : minutiDaOrario(grezzo?.uscita);
-
-    if (entrata === null) {
-      errori.push(`${posizione}: l'orario di entrata non è valido.`);
-      continue;
-    }
-    if (!uscitaVuota && uscita === null) {
-      errori.push(`${posizione}: l'orario di uscita non è valido.`);
-      continue;
-    }
-    if (uscita !== null && uscita <= entrata) {
-      errori.push(`${posizione}: l'uscita deve essere dopo l'entrata.`);
-      continue;
-    }
-    intervalli.push({ entrata, uscita });
-  }
-  if (errori.length) return [null, errori];
-
-  intervalli.sort((a, b) => a.entrata - b.entrata);
-
-  const aperti = intervalli.filter((i) => i.uscita === null);
-  if (aperti.length && !apertoAmmesso) {
-    return [null, ["Ogni intervallo deve avere l'orario di uscita."]];
-  }
-  if (aperti.length > 1 || (aperti.length === 1 && intervalli.at(-1).uscita !== null)) {
-    return [null, ["Solo l'ultimo intervallo della giornata può restare senza uscita."]];
-  }
-
-  for (let indice = 1; indice < intervalli.length; indice++) {
-    const precedente = intervalli[indice - 1];
-    if (intervalli[indice].entrata < precedente.uscita) {
-      return [
-        null,
-        [
-          `Gli intervalli ${orarioDaMinuti(precedente.entrata)}–${orarioDaMinuti(precedente.uscita)} ` +
-            `e dalle ${orarioDaMinuti(intervalli[indice].entrata)} si sovrappongono.`,
-        ],
-      ];
-    }
-  }
-
-  return [
-    intervalli.map((i) => ({
-      entrata: orarioDaMinuti(i.entrata),
-      uscita: i.uscita === null ? null : orarioDaMinuti(i.uscita),
-    })),
-    [],
-  ];
-}
-
-/**
- * Le ore lavorate di una giornata, come le conta il timesheet dell'ufficio:
- * dall'ultima uscita si toglie la prima entrata, e le pause in mezzo restano
- * comprese. Un intervallo aperto conta fino ad `adesso` (minuti dalla
- * mezzanotte) se lo si passa, altrimenti la giornata finisce all'ultima uscita
- * registrata.
- */
-export function minutiLavorati(intervalli, adesso = null) {
-  let inizio = null;
-  let fine = null;
-  for (const intervallo of intervalli ?? []) {
-    const entrata = minutiDaOrario(intervallo.entrata);
-    if (entrata === null) continue;
-    inizio = inizio === null ? entrata : Math.min(inizio, entrata);
-    const uscita =
-      intervallo.uscita === null || intervallo.uscita === undefined
-        ? adesso
-        : minutiDaOrario(intervallo.uscita);
-    if (uscita !== null && uscita > entrata) fine = fine === null ? uscita : Math.max(fine, uscita);
-  }
-  return inizio === null || fine === null || fine <= inizio ? 0 : fine - inizio;
-}
-
-/** Prima entrata e ultima uscita: le colonne «dalle» e «alle» del timesheet. */
-export function estremi(intervalli) {
-  const chiusi = (intervalli ?? []).filter((i) => i.entrata && i.uscita);
-  const entrate = (intervalli ?? []).map((i) => minutiDaOrario(i.entrata)).filter((m) => m !== null);
-  const uscite = chiusi.map((i) => minutiDaOrario(i.uscita)).filter((m) => m !== null);
-  return {
-    dalle: entrate.length ? orarioDaMinuti(Math.min(...entrate)) : null,
-    alle: uscite.length ? orarioDaMinuti(Math.max(...uscite)) : null,
-  };
-}
-
-/** Le pause sono i buchi fra un intervallo e il successivo: si mostrano, non si tolgono. */
-export function pause(intervalli) {
-  const chiusi = (intervalli ?? []).filter((i) => i.uscita);
-  const risultato = [];
-  for (let indice = 1; indice < chiusi.length; indice++) {
-    const inizio = chiusi[indice - 1].uscita;
-    const fine = chiusi[indice].entrata;
-    const durata = minutiDaOrario(fine) - minutiDaOrario(inizio);
-    if (durata > 0) risultato.push({ inizio, fine, minuti: durata });
-  }
-  return risultato;
-}
-
-export function intervalloAperto(intervalli) {
-  const ultimo = (intervalli ?? []).at(-1);
-  return ultimo && !ultimo.uscita ? ultimo : null;
-}
-
-// --- totali --------------------------------------------------------------
-
-function somma(elenco, campo = "minuti") {
-  return (elenco ?? []).reduce((totale, voce) => totale + (Number(voce?.[campo]) || 0), 0);
-}
-
-/**
- * Una giornata: timbrature, ore ripartite sui progetti, descrizione
- * dell'attività svolta, località, assenze e straordinario annotato a mano.
+ * Una giornata è una riga del timesheet dell'ufficio: dalle, alle, attività,
+ * località di svolgimento e progetto. Gli orari stanno come «09:00», oppure
+ * vuoti; le ore lavorate non si salvano, si calcolano.
  */
 export function giornoVuoto(data) {
-  return {
-    data,
-    intervalli: [],
-    progetti: [],
-    descrizione: "",
-    localita: "",
-    assenze: [],
-    straordinario: null,
-  };
+  return { data, dalle: "", alle: "", attivita: "", localita: "", progetto: "" };
 }
 
 /** La località da sola non è un dato: senza nient'altro la giornata è vuota. */
 export function giornoSenzaDati(giorno) {
   return (
     !giorno ||
-    (!giorno.intervalli?.length &&
-      !giorno.progetti?.length &&
-      !giorno.assenze?.length &&
-      !giorno.straordinario &&
-      !String(giorno.descrizione ?? "").trim())
+    (!giorno.dalle &&
+      !giorno.alle &&
+      !String(giorno.attivita ?? "").trim() &&
+      !String(giorno.progetto ?? "").trim())
   );
 }
 
-/**
- * I conti di una giornata. «Da ripartire» sono le ore lavorate non ancora
- * assegnate a un progetto: se è negativa, se ne sono assegnate di più.
- */
-export function totaliGiorno(giorno, adesso = null) {
-  const lavorate = minutiLavorati(giorno?.intervalli, adesso);
-  const progetti = somma(giorno?.progetti);
-  return {
-    lavorate,
-    progetti,
-    assenze: somma(giorno?.assenze),
-    straordinario: Number(giorno?.straordinario?.minuti) || 0,
-    daRipartire: lavorate - progetti,
-  };
+/** Le ore lavorate di una riga, come la formula del modello: alle − dalle. */
+export function minutiLavorati(giorno) {
+  const dalle = minutiDaOrario(giorno?.dalle);
+  const alle = minutiDaOrario(giorno?.alle);
+  return dalle === null || alle === null || alle <= dalle ? 0 : alle - dalle;
 }
 
-/** I totali di un insieme di giorni, con le ripartizioni per progetto e per assenza. */
+/** Il totale delle ore di un insieme di giorni e quanti giorni hanno ore. */
 export function totaliMese(giorni) {
-  const perProgetto = new Map();
-  const perAssenza = new Map();
-  const totali = {
-    lavorate: 0,
-    progetti: 0,
-    assenze: 0,
-    straordinario: 0,
-    giorniPresenza: 0,
-    giorniAssenza: 0,
-    perProgetto,
-    perAssenza,
-  };
-
+  let minuti = 0;
+  let giorniConOre = 0;
   for (const giorno of giorni ?? []) {
-    const delGiorno = totaliGiorno(giorno);
-    totali.lavorate += delGiorno.lavorate;
-    totali.progetti += delGiorno.progetti;
-    totali.assenze += delGiorno.assenze;
-    totali.straordinario += delGiorno.straordinario;
-    if (delGiorno.lavorate > 0) totali.giorniPresenza += 1;
-    if (giorno.assenze?.length) totali.giorniAssenza += 1;
-
-    for (const voce of giorno.progetti ?? []) {
-      perProgetto.set(voce.progetto, (perProgetto.get(voce.progetto) ?? 0) + voce.minuti);
-    }
-    for (const voce of giorno.assenze ?? []) {
-      perAssenza.set(voce.tipo, (perAssenza.get(voce.tipo) ?? 0) + voce.minuti);
-    }
+    const delGiorno = minutiLavorati(giorno);
+    minuti += delGiorno;
+    if (delGiorno > 0) giorniConOre += 1;
   }
-  return totali;
+  return { minuti, giorniConOre };
+}
+
+// Le assenze a giornata intera si scrivono nella colonna Attività, in
+// maiuscolo e con le altre celle vuote, come chiede la guida dell'ufficio.
+export const ASSENZE = ["FERIE", "MALATTIA", "PERMESSO", "ROL", "CONGEDO", "INFORTUNIO"];
+
+/** «ferie» → «FERIE»; null se il testo non è un'assenza dell'elenco. */
+export function assenza(testo) {
+  const maiuscolo = String(testo ?? "").trim().toUpperCase();
+  return ASSENZE.includes(maiuscolo) ? maiuscolo : null;
 }
 
 // --- festività -----------------------------------------------------------

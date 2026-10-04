@@ -1,70 +1,58 @@
 # Timesheet
 
-Registro delle presenze, delle attività e dei progetti di ogni giorno, con il
-timesheet Excel dell'anno pronto da inviare. È una app web installabile che
-funziona anche senza rete. Non ha server né dipendenze da installare: è HTML,
-CSS e JavaScript, e i dati restano nel PC di chi la usa.
+Il timesheet dell'ufficio, compilato nel browser invece che in Excel. La
+schermata è il foglio del mese, uguale a quello che si compilava a mano:
+intestazione, una riga per giorno con dalle, alle, ore lavorate, attività,
+località di svolgimento e progetto, sabati, domeniche e festivi in rosso, il
+totale in fondo. Si scrive direttamente nelle celle, e a fine mese si esporta
+il file Excel dell'anno nel formato dell'ufficio.
 
-Sostituisce il timesheet compilato a mano in Excel, un file all'anno per
-dipendente con un foglio per mese, e ne produce uno identico. Ognuno registra la
-propria giornata dal proprio PC, esporta il suo file e lo manda
-all'amministrazione, che può rileggere i file di tutti e farne un riepilogo.
+È una app web installabile che funziona anche senza rete. Non ha server né
+dipendenze da installare: è HTML, CSS e JavaScript, e i dati restano nel PC di
+chi la usa.
 
-## Per i dipendenti
+## Come si compila
 
-**Prima volta.**
-1. In *Impostazioni → Configurazione dell'ufficio* importa il file
-   `configurazione-ufficio.json` che ti ha mandato l'amministrazione: contiene
-   ente, progetti, località, codici di assenza e patrono.
-2. Inserisci nome, cognome, posizione/funzione e località abituale; la
-   matricola è facoltativa. Le ore previste per giorno servono solo per le
-   assenze a giornata intera e per segnalare i giorni lasciati vuoti.
-3. Con *Installa* la app compare fra i programmi del PC e si apre in una
-   finestra sua.
+**L'intestazione.** In cima al foglio si scrivono ente, progetto, nome e
+cognome, posizione/funzione: restano uguali per tutti i mesi. I giorni lavorati
+si calcolano da soli, come nel modello (ore del mese diviso otto).
 
-**Ogni giorno.** In *Oggi* il pulsante **Entra** registra l'ora di ingresso e
-diventa **Esci**. Per la pausa pranzo si può uscire e rientrare, oppure timbrare
-solo l'arrivo e l'uscita di fine giornata: le ore lavorate sono sempre
-dall'ultima uscita alla prima entrata, pausa compresa, come nel timesheet
-dell'ufficio. Due tocchi nello stesso minuto si annullano. Gli orari si possono
-anche scrivere o correggere a mano.
+**Le righe.** Si clicca in una cella e si scrive.
 
-Sotto, la giornata segue le colonne del timesheet:
+- <kbd>Invio</kbd> scende alla stessa colonna del giorno dopo, <kbd>Tab</kbd>
+  passa alla cella accanto, le frecce su e giù cambiano riga, <kbd>Esc</kbd>
+  annulla la modifica della cella, <kbd>Alt</kbd>+<kbd>Invio</kbd> va a capo
+  dentro la cella.
+- Gli orari si scrivono come viene: «9», «9.30», «930» diventano «9:00»,
+  «9:30». Le ore lavorate sono alle meno dalle, come la formula del foglio.
+- In un giorno lavorativo, appena si scrive l'attività in una riga ancora
+  vuota, dalle, alle e località si compilano con quelli abituali (di serie
+  9:00–17:00; si cambiano in *Impostazioni*). Restano modificabili riga per
+  riga.
+- Attività, località e progetti già scritti tornano come suggerimenti mentre
+  si scrive: frecce e <kbd>Invio</kbd>, o un clic, per sceglierli.
+- **Assenze**: si scrive FERIE, MALATTIA o PERMESSO nell'attività e si lasciano
+  vuoti gli orari, come chiede la guida dell'ufficio. Scritto in minuscolo
+  diventa maiuscolo da sé.
 
-- **Attività svolte**: il testo della colonna *Attività*, più dettagliato
-  possibile perché serve alla rendicontazione;
-- **Località di svolgimento**: quella abituale è già scelta; per una trasferta
-  si sceglie *Altro…* e si scrive il luogo;
-- **Progetti**: le ore della giornata ripartite sui progetti. *Assegna il
-  resto* mette su un progetto le ore non ancora ripartite;
-- **Assenze**: ferie, malattia, permessi, con le ore. *Assente tutto il
-  giorno* usa le ore previste per quel giorno;
-- **Straordinario**: ore e nota, annotato a mano. Non compare nel timesheet:
-  si tiene a parte, e arriva all'amministrazione con i dati del file.
+Ogni cella si salva da sola mentre si scrive: non c'è un pulsante Salva.
 
-**A fine mese**, o quando serve, in *Mese* si controllano i giorni segnati come
-«Da completare», «Da ripartire» o «Manca l'uscita». Poi *Esporta l'Excel del
-2026* scarica `Cognome_Nome_TIME_SHEET_2026.xlsx`, con tutto l'anno aggiornato,
-da mandare all'amministrazione. Se dopo l'esportazione si modifica una
-giornata, la app lo segnala: va esportato e mandato di nuovo.
+**A fine mese** *Esporta l'Excel del 2026* scarica
+`Cognome_Nome_TIME_SHEET_2026.xlsx`, con tutto l'anno aggiornato, da mandare
+all'amministrazione.
+
+**Impostazioni**: orario e località abituali, il patrono (che si aggiunge ai
+festivi in rosso), backup e ripristino, e la sezione Ufficio.
 
 ## Per l'amministrazione
 
-In *Impostazioni → Amministrazione* si attiva la sezione **Ufficio**.
-
-- **Configurazione per i dipendenti.** Ente, patrono, progetti, località e
-  codici di assenza si preparano in *Impostazioni → Configurazione
-  dell'ufficio*. Da *Ufficio* si scarica il file da mandare a tutti, così
-  ognuno usa gli stessi nomi. Quando cambia qualcosa, per esempio un progetto
-  nuovo, si rimanda il file. I progetti già usati da un dipendente non
-  spariscono: restano, disattivati.
-- **Riepilogo del mese.** Si importano i file Excel dell'anno ricevuti, anche
-  tutti insieme, e si sceglie il mese (all'inizio è l'ultimo con dati). La
-  tabella mostra per ciascuno giorni di presenza, ore lavorate, assenze per
-  codice, straordinari e ore per progetto. *Scarica il riepilogo in Excel*
-  produce un file con il riepilogo e, per ogni dipendente, il foglio del mese
-  nel formato dell'ufficio. Un dipendente importato due volte conta una volta
-  sola; file di anni diversi vengono rifiutati.
+In *Impostazioni → Amministrazione* si attiva la sezione **Ufficio**. Lì si
+importano i file Excel dell'anno ricevuti dai dipendenti, anche tutti insieme,
+e si sceglie il mese. La tabella mostra per ciascuno i giorni con ore, le ore
+lavorate e i giorni lavorati (ore diviso otto). *Scarica il riepilogo in Excel*
+produce un file con il riepilogo e, per ogni dipendente, il suo foglio del
+mese. Un dipendente importato due volte conta una volta sola; file di anni
+diversi vengono rifiutati.
 
 ## Il file Excel
 
@@ -75,19 +63,16 @@ Il file dell'anno ricalca il timesheet dell'ufficio: un foglio per mese, da
   Posizione/funzione, giorni lavorati (le ore del mese diviso otto, con la
   formula del modello) e il mese.
 - **Una riga per giorno:** data, dalle, alle, ore lavorate (la formula
-  `alle − dalle`), attività, località di svolgimento e progetto. I progetti
-  portano le loro ore: «Progetto Ponte (5:00), Rete Famiglie (3:00)».
+  `alle − dalle`), attività, località di svolgimento e progetto, come sono
+  scritte nella app.
 - **Sabati, domeniche e festivi:** in rosso, e un festivo senza dati porta il
   nome della festa.
-- **Assenze:** un'assenza a giornata intera si scrive in maiuscolo nella
-  colonna Attività, «FERIE», con le altre celle vuote, come chiede la guida
-  dell'ufficio. Un permesso di qualche ora in una giornata lavorata si aggiunge
-  in coda all'attività.
+- **Assenze:** «FERIE» nella colonna Attività, con le altre celle vuote, come
+  chiede la guida dell'ufficio.
 - **Totale:** «TOTALE ORE LAVORATE NEL MESE» con la somma.
 - **Stampa:** A4 verticale, ogni mese su una pagina.
 
-Un foglio nascosto, **dati**, contiene le stesse registrazioni in forma di
-elenco, straordinari compresi. Serve all'importazione nella sezione Ufficio e
+Un foglio nascosto, **dati**, contiene le stesse righe in forma di elenco. Serve all'importazione nella sezione Ufficio e
 regge anche un salvataggio da Excel. Non va modificato a mano.
 
 L'impaginazione dei fogli mensili sta tutta in `modello.js`: è l'unico file da
@@ -95,14 +80,14 @@ cambiare se il modello dell'ufficio cambia.
 
 Le festività sono quelle nazionali, compresi Pasqua, Pasquetta e, dal 2026,
 San Francesco il 4 ottobre (legge 151/2025). Il patrono locale si aggiunge
-dalla configurazione.
+dalle impostazioni.
 
 ## Dove stanno i dati
 
 Nell'archivio del browser (IndexedDB), sul singolo PC. Non vengono inviati da
 nessuna parte: l'unica cosa che esce è il file Excel che il dipendente scarica
-e manda. Il codice della app è pubblico, ma attività, clienti e nomi stanno solo
-nei PC e nei file di configurazione.
+e manda. Il codice della app è pubblico, ma attività, progetti e nomi stanno solo
+nei PC e nei file esportati.
 
 Ne seguono tre cose:
 
@@ -144,7 +129,7 @@ come sono, senza passarli da Jekyll.
 npm test
 ```
 
-Provano le regole di calcolo, cioè orari, ore lavorate, totali e festività.
+Provano le regole di calcolo, cioè orari, ore lavorate, totali, assenze e festività.
 Provano anche il file dell'anno nel formato dell'ufficio, la sua rilettura
 (compresa quella dei file risalvati da Excel) e il riepilogo dell'ufficio. Non servono pacchetti da installare: basta
 Node 20 o più recente.
@@ -154,13 +139,13 @@ Node 20 o più recente.
 | File | Contenuto |
 |---|---|
 | `index.html` | struttura della pagina |
-| `style.css` | aspetto, con tema chiaro e scuro |
-| `calcoli.js` | regole pure: orari, durate, intervalli, ore lavorate, totali, festività |
-| `dati.js` | archiviazione nel browser, validazione, backup |
+| `style.css` | aspetto del foglio, sul modello Excel dell'ufficio |
+| `calcoli.js` | regole pure: orari, ore lavorate, totali, assenze, festività |
+| `dati.js` | archiviazione nel browser, validazione, backup, dati della prima versione |
 | `xlsx.js` | scrittura e lettura dei file .xlsx, senza librerie |
 | `modello.js` | impaginazione del foglio mensile, sul modello dell'ufficio |
 | `esportazione.js` | file dell'anno, rilettura e riepilogo dell'ufficio |
-| `app.js` | interfaccia ed eventi |
+| `app.js` | il foglio da compilare, impostazioni e sezione Ufficio |
 | `sw.js` | copia locale per il funzionamento offline |
 | `manifest.webmanifest` | dati per l'installazione |
 

@@ -10,8 +10,8 @@
 // - riga 11: dalle · alle · Ore lavorate · Attività · Località · Progetto;
 // - dalla riga 12 un giorno per riga, weekend e festivi tutti in rosso;
 // - in fondo il totale delle ore del mese.
-// Le assenze a giornata intera si scrivono nella colonna Attività, in
-// maiuscolo e con le altre celle vuote, come chiede la guida dell'ufficio.
+// Le righe si scrivono come le ha compilate il dipendente nella app, che
+// mostra lo stesso foglio: qui c'è solo l'impaginazione.
 
 import * as calcoli from "./calcoli.js";
 import { frazioneGiorno, serialeData } from "./xlsx.js";
@@ -95,32 +95,11 @@ function orario(testo) {
   return minuti === null ? null : frazioneGiorno(minuti);
 }
 
-function progettiConOre(giorno) {
-  return (giorno.progetti ?? [])
-    .map((voce) => `${voce.progetto} (${calcoli.durataInTesto(voce.minuti)})`)
-    .join(", ");
-}
-
-/**
- * Il testo della colonna Attività. Un'assenza a giornata intera (senza
- * presenza) si scrive in maiuscolo, come «FERIE»; un'assenza di qualche ora in
- * una giornata lavorata si aggiunge in coda alla descrizione.
- */
-function testoAttivita(giorno, tipiAssenza, festa) {
-  const nomeAssenza = (codice) => tipiAssenza.find((tipo) => tipo.codice === codice)?.nome ?? codice;
-  const descrizione = String(giorno.descrizione ?? "").trim();
-  const assenze = giorno.assenze ?? [];
-
-  if (!giorno.intervalli?.length && assenze.length) {
-    const nomi = assenze.map((assenza) => nomeAssenza(assenza.tipo).toUpperCase()).join(" / ");
-    return descrizione ? `${nomi} — ${descrizione}` : nomi;
-  }
-  const parti = descrizione ? [descrizione] : [];
-  for (const assenza of assenze) {
-    parti.push(`${nomeAssenza(assenza.tipo).toLowerCase()} ${calcoli.durataInTesto(assenza.minuti)}`);
-  }
-  if (!parti.length && festa && !giorno.intervalli?.length) return festa;
-  return parti.join(" — ");
+/** Il testo della colonna Attività; un festivo lasciato vuoto porta il nome della festa. */
+export function testoAttivita(giorno, festa = "") {
+  const attivita = String(giorno?.attivita ?? "").trim();
+  if (attivita) return attivita;
+  return festa && calcoli.giornoSenzaDati(giorno) ? festa : "";
 }
 
 function righeOccupate(testo, perRiga) {
@@ -129,25 +108,20 @@ function righeOccupate(testo, perRiga) {
 
 /**
  * Il foglio di un mese.
- * giorni: Map data ISO → giorno (i giorni mancanti sono vuoti);
- * tipiAssenza: [{ codice, nome }], per scrivere il nome delle assenze.
+ * profilo: { nome, cognome, posizione, ente, progetto }, l'intestazione;
+ * giorni: Map data ISO → giorno (i giorni mancanti sono vuoti).
  */
 export function foglioMese({
-  ente = "",
   profilo = {},
   mese,
   giorni = new Map(),
-  tipiAssenza = [],
   patrono = "",
   nomeFoglio = nomeFoglioMese(mese),
 }) {
   const date = calcoli.dateDelMese(mese);
   const ultimaRigaGiorni = PRIMA_RIGA_GIORNI + date.length - 1;
   const rigaTotale = ultimaRigaGiorni + 1;
-  const totaleMinuti = date.reduce(
-    (totale, data) => totale + calcoli.minutiLavorati(giorni.get(data)?.intervalli),
-    0
-  );
+  const totaleMinuti = date.reduce((totale, data) => totale + calcoli.minutiLavorati(giorni.get(data)), 0);
 
   const vuota = (stile) => ({ v: null, stile });
   const etichetta = (testo, valore, stile = STILI.valore) => [
@@ -161,8 +135,8 @@ export function foglioMese({
       celle: [{ v: "Time sheet", stile: STILI.titolo }, ...Array.from({ length: 6 }, () => vuota(STILI.bordoAlto))],
     },
     [vuota(STILI.bordoSinistro)],
-    etichetta("Ente:", ente),
-    etichetta("Progetto:", ""),
+    etichetta("Ente:", profilo?.ente ?? ""),
+    etichetta("Progetto:", profilo?.progetto ?? ""),
     etichetta("Nome e cognome:", nomeECognome(profilo)),
     etichetta("Posizione/funzione:", profilo?.posizione ?? ""),
     etichetta("giorni lavorati:", null, STILI.giorniLavorati),
@@ -188,27 +162,26 @@ export function foglioMese({
     const rosso = calendario.tipo === "feriale" ? null : ROSSO;
     const stile = (nome) => (rosso ? { ...STILI[nome], sfondo: rosso } : STILI[nome]);
 
-    const { dalle, alle } = calcoli.estremi(giorno.intervalli);
-    const attivita = testoAttivita(giorno, tipiAssenza, calendario.nome);
-    const localita = giorno.intervalli?.length ? giorno.localita ?? "" : "";
-    const progetti = progettiConOre(giorno);
+    const attivita = testoAttivita(giorno, calendario.nome);
+    const localita = giorno.localita ?? "";
+    const progetto = giorno.progetto ?? "";
     const occupate = Math.max(
       righeOccupate(attivita, CARATTERI_PER_RIGA.attivita),
       righeOccupate(localita, CARATTERI_PER_RIGA.localita),
-      righeOccupate(progetti, CARATTERI_PER_RIGA.progetto)
+      righeOccupate(progetto, CARATTERI_PER_RIGA.progetto)
     );
 
     righe.push({
       altezza: occupate > 1 ? 15 * occupate : undefined,
       celle: [
         { v: serialeData(data), stile: stile("data") },
-        { v: orario(dalle), stile: stile("orario") },
-        { v: orario(alle), stile: stile("orario") },
+        { v: orario(giorno.dalle), stile: stile("orario") },
+        { v: orario(giorno.alle), stile: stile("orario") },
         // Come nel modello la formula c'è sempre, anche nei giorni vuoti.
-        { f: `C${riga}-B${riga}`, v: frazioneGiorno(calcoli.minutiLavorati(giorno.intervalli)), stile: stile("orario") },
+        { f: `C${riga}-B${riga}`, v: frazioneGiorno(calcoli.minutiLavorati(giorno)), stile: stile("orario") },
         { v: attivita, stile: stile("attivita") },
         { v: localita, stile: stile("localita") },
-        { v: progetti, stile: stile("progetto") },
+        { v: progetto, stile: stile("progetto") },
       ],
     });
   }

@@ -2,57 +2,33 @@
 //
 // Ogni dipendente ha un file per anno, come il timesheet dell'ufficio: un
 // foglio per mese, impaginato da modello.js per chi lo legge, e un foglio
-// nascosto «dati» con le stesse registrazioni in forma di elenco. Il secondo
-// serve all'amministrazione per rileggere i file di tutti e farne il
-// riepilogo, senza dipendere dall'impaginazione dei fogli mensili: il modello
-// può cambiare, il foglio dati no.
+// nascosto «dati» con le stesse righe in forma di elenco. Il secondo serve
+// all'amministrazione per rileggere i file di tutti e farne il riepilogo,
+// senza dipendere dall'impaginazione dei fogli mensili: il modello può
+// cambiare, il foglio dati no.
 
 import * as calcoli from "./calcoli.js";
 import { foglioMese, nomeDelMese, nomeDipendente } from "./modello.js";
 import { creaXlsx, frazioneGiorno, leggiXlsx, nomeFoglioValido } from "./xlsx.js";
 
 export const FORMATO_DATI = "timesheet-dati";
-export const VERSIONE_DATI = 1;
+export const VERSIONE_DATI = 2;
 const NOME_FOGLIO_DATI = "dati";
 
-function foglioDati({ azienda, profilo, anno, giorni, tipiAssenza }) {
+function foglioDati({ profilo, anno, giorni, patrono }) {
   const righe = [
     [FORMATO_DATI, VERSIONE_DATI],
     ["anno", String(anno)],
-    ["azienda", azienda ?? ""],
-    [
-      "dipendente",
-      profilo?.nome ?? "",
-      profilo?.cognome ?? "",
-      profilo?.matricola ?? "",
-      profilo?.posizione ?? "",
-    ],
+    ["dipendente", profilo?.nome ?? "", profilo?.cognome ?? "", profilo?.posizione ?? ""],
+    ["ente", profilo?.ente ?? ""],
+    ["progetto", profilo?.progetto ?? ""],
+    ["patrono", patrono ?? ""],
+    ["giorno", "data", "dalle", "alle", "attività", "località", "progetto"],
   ];
-  for (const tipo of tipiAssenza ?? []) righe.push(["tipo-assenza", tipo.codice, tipo.nome]);
-  righe.push(["registro", "data", "valore", "valore", "valore"]);
-
   for (const giorno of [...giorni.values()].sort((a, b) => a.data.localeCompare(b.data))) {
-    for (const intervallo of giorno.intervalli ?? []) {
-      righe.push(["intervallo", giorno.data, intervallo.entrata, intervallo.uscita ?? ""]);
-    }
-    for (const voce of giorno.progetti ?? []) {
-      righe.push(["progetto", giorno.data, voce.progetto, voce.minuti]);
-    }
-    if (giorno.descrizione) righe.push(["descrizione", giorno.data, giorno.descrizione]);
-    if (giorno.localita) righe.push(["localita", giorno.data, giorno.localita]);
-    for (const voce of giorno.assenze ?? []) {
-      righe.push(["assenza", giorno.data, voce.tipo, voce.minuti]);
-    }
-    if (giorno.straordinario) {
-      righe.push([
-        "straordinario",
-        giorno.data,
-        giorno.straordinario.minuti,
-        giorno.straordinario.nota ?? "",
-      ]);
-    }
+    righe.push(["giorno", giorno.data, giorno.dalle, giorno.alle, giorno.attivita, giorno.localita, giorno.progetto]);
   }
-  return { nome: NOME_FOGLIO_DATI, nascosto: true, righe, colonne: [14, 12, 40, 10, 30] };
+  return { nome: NOME_FOGLIO_DATI, nascosto: true, righe, colonne: [10, 12, 8, 8, 50, 20, 30] };
 }
 
 function perData(giorni, prefisso) {
@@ -64,23 +40,14 @@ function perData(giorni, prefisso) {
 }
 
 /** Il file .xlsx dell'anno di un dipendente: dodici fogli mensili più i dati. */
-export function fileDellAnno({ configurazione, profilo, anno, giorni }) {
+export function fileDellAnno({ profilo, anno, giorni, patrono = "" }) {
   const dellAnno = perData(giorni, `${anno}-`);
-  const tipiAssenza = configurazione?.assenze ?? [];
-  const ente = configurazione?.azienda ?? "";
   return creaXlsx(
     [
       ...calcoli.mesiDellAnno(anno).map((mese) =>
-        foglioMese({
-          ente,
-          profilo,
-          mese,
-          giorni: perData(dellAnno.values(), mese),
-          tipiAssenza,
-          patrono: configurazione?.patrono ?? "",
-        })
+        foglioMese({ profilo, mese, giorni: perData(dellAnno.values(), mese), patrono })
       ),
-      foglioDati({ azienda: ente, profilo, anno, giorni: dellAnno, tipiAssenza }),
+      foglioDati({ profilo, anno, giorni: dellAnno, patrono }),
     ],
     { autore: nomeDipendente(profilo) }
   );
@@ -106,15 +73,15 @@ function testo(valore) {
   return valore === null || valore === undefined ? "" : String(valore).trim();
 }
 
-function minuti(valore) {
-  const numero = Number(valore);
-  return Number.isInteger(numero) && numero >= 0 && numero <= calcoli.MINUTI_GIORNO ? numero : null;
+function orario(valore) {
+  const minuti = calcoli.minutiDaOrario(testo(valore));
+  return minuti === null ? null : calcoli.orarioDaMinuti(minuti);
 }
 
 /**
  * Rilegge un file prodotto da fileDellAnno. Restituisce
- * { profilo, anno, azienda, tipiAssenza, giorni: Map } oppure lancia un
- * errore con un messaggio da mostrare così com'è.
+ * { profilo, anno, patrono, giorni: Map } oppure lancia un errore con un
+ * messaggio da mostrare così com'è.
  */
 export async function leggiFile(byte, nomeFile = "Il file") {
   let fogli;
@@ -131,77 +98,58 @@ export async function leggiFile(byte, nomeFile = "Il file") {
     throw new Error(`${nomeFile} non è stato esportato dalla app Timesheet: manca il foglio dei dati.`);
   }
   if (Number(foglio.righe[0][1]) !== VERSIONE_DATI) {
-    throw new Error(`${nomeFile} usa una versione dei dati non riconosciuta (${foglio.righe[0][1]}).`);
+    throw new Error(
+      `${nomeFile} viene da una versione precedente della app: chiedi di esportarlo di nuovo.`
+    );
   }
 
   let anno = null;
-  let azienda = "";
-  const profilo = { nome: "", cognome: "", matricola: "", posizione: "" };
-  const tipiAssenza = [];
+  let patrono = "";
+  const profilo = { nome: "", cognome: "", posizione: "", ente: "", progetto: "" };
   const giorni = new Map();
   const errori = [];
-
-  const giorno = (data) => {
-    if (!giorni.has(data)) giorni.set(data, calcoli.giornoVuoto(data));
-    return giorni.get(data);
-  };
 
   foglio.righe.slice(1).forEach((riga, indice) => {
     const [tipo, ...valori] = riga ?? [];
     const posizione = `riga ${indice + 2}`;
     switch (testo(tipo)) {
       case "":
-      case "registro":
         return;
       case "anno":
         anno = /^\d{4}$/.test(testo(valori[0])) ? testo(valori[0]) : null;
         return;
-      case "azienda":
-        azienda = testo(valori[0]);
-        return;
       case "dipendente":
         profilo.nome = testo(valori[0]);
         profilo.cognome = testo(valori[1]);
-        profilo.matricola = testo(valori[2]);
-        profilo.posizione = testo(valori[3]);
+        profilo.posizione = testo(valori[2]);
         return;
-      case "tipo-assenza":
-        tipiAssenza.push({ codice: testo(valori[0]), nome: testo(valori[1]) });
+      case "ente":
+        profilo.ente = testo(valori[0]);
         return;
-    }
-
-    const data = calcoli.dataValida(testo(valori[0]));
-    if (!data) {
-      errori.push(`${posizione}: data non valida.`);
-      return;
-    }
-
-    switch (testo(tipo)) {
-      case "intervallo":
-        giorno(data).intervalli.push({ entrata: testo(valori[1]), uscita: testo(valori[2]) || null });
+      case "progetto":
+        profilo.progetto = testo(valori[0]);
         return;
-      case "progetto": {
-        const durata = minuti(valori[2]);
-        if (!testo(valori[1]) || durata === null) errori.push(`${posizione}: progetto non valido.`);
-        else giorno(data).progetti.push({ progetto: testo(valori[1]), minuti: durata });
+      case "patrono":
+        patrono = testo(valori[0]);
         return;
-      }
-      case "descrizione":
-        giorno(data).descrizione = testo(valori[1]);
-        return;
-      case "localita":
-        giorno(data).localita = testo(valori[1]);
-        return;
-      case "assenza": {
-        const durata = minuti(valori[2]);
-        if (!testo(valori[1]) || durata === null) errori.push(`${posizione}: assenza non valida.`);
-        else giorno(data).assenze.push({ tipo: testo(valori[1]), minuti: durata });
-        return;
-      }
-      case "straordinario": {
-        const durata = minuti(valori[1]);
-        if (durata === null) errori.push(`${posizione}: straordinario non valido.`);
-        else giorno(data).straordinario = { minuti: durata, nota: testo(valori[2]) };
+      case "giorno": {
+        if (testo(valori[0]) === "data") return;
+        const data = calcoli.dataValida(testo(valori[0]));
+        const dalle = testo(valori[1]) ? orario(valori[1]) : "";
+        const alle = testo(valori[2]) ? orario(valori[2]) : "";
+        if (!data) errori.push(`${posizione}: data non valida.`);
+        else if (dalle === null || alle === null) errori.push(`${posizione}: orario non valido.`);
+        else if (anno && !data.startsWith(`${anno}-`)) errori.push(`il giorno ${data} non è dell'anno ${anno}.`);
+        else {
+          giorni.set(data, {
+            data,
+            dalle,
+            alle,
+            attivita: testo(valori[3]),
+            localita: testo(valori[4]),
+            progetto: testo(valori[5]),
+          });
+        }
         return;
       }
       default:
@@ -210,23 +158,16 @@ export async function leggiFile(byte, nomeFile = "Il file") {
   });
 
   if (!anno) errori.push("manca l'anno.");
-  for (const [data, registrato] of giorni) {
-    if (anno && !data.startsWith(`${anno}-`)) errori.push(`il giorno ${data} non è dell'anno ${anno}.`);
-    const [validi, suoi] = calcoli.validaIntervalli(registrato.intervalli, { apertoAmmesso: true });
-    if (suoi.length) errori.push(`${data}: ${suoi.join(" ")}`);
-    else registrato.intervalli = validi;
-  }
   if (errori.length) {
     throw new Error(`${nomeFile} contiene dati non validi: ${errori.slice(0, 3).join(" ")}`);
   }
-
-  return { profilo, anno, azienda, tipiAssenza, giorni };
+  return { profilo, anno, patrono, giorni };
 }
 
 // --- riepilogo dell'ufficio ----------------------------------------------
 
 function chiaveDipendente(profilo) {
-  return (profilo.matricola || `${profilo.cognome} ${profilo.nome}`).toLowerCase();
+  return `${profilo.cognome} ${profilo.nome}`.toLowerCase();
 }
 
 /** I mesi in cui almeno un file ha qualcosa, dal più recente. */
@@ -237,9 +178,9 @@ export function mesiConDati(letti) {
 }
 
 /**
- * Unisce i file letti. Un dipendente ripetuto (stessa matricola, o stesso
- * nome se manca) vale una volta sola: l'ultimo file importato sostituisce il
- * precedente. Restituisce [{ anno, file }, errori].
+ * Unisce i file letti. Un dipendente ripetuto (stesso nome e cognome) vale una
+ * volta sola: l'ultimo file importato sostituisce il precedente.
+ * Restituisce [{ anno, file }, errori].
  */
 export function unisciFile(letti) {
   const anni = [...new Set(letti.map((file) => file.anno))];
@@ -254,26 +195,13 @@ export function unisciFile(letti) {
   return [{ anno: anni[0] ?? null, file }, []];
 }
 
-/** Il riepilogo di un mese a partire dai file uniti. */
+/** Il riepilogo di un mese a partire dai file uniti: ore e giorni di ciascuno. */
 export function riepilogoUfficio(file, mese) {
-  const tipiAssenza = new Map();
-  const progetti = [];
   const righe = file.map((letto) => {
     const giorni = new Map([...letto.giorni].filter(([data]) => data.startsWith(mese)));
-    for (const tipo of letto.tipiAssenza) if (!tipiAssenza.has(tipo.codice)) tipiAssenza.set(tipo.codice, tipo);
-    const totali = calcoli.totaliMese([...giorni.values()]);
-    for (const codice of totali.perAssenza.keys()) {
-      if (!tipiAssenza.has(codice)) tipiAssenza.set(codice, { codice, nome: "" });
-    }
-    for (const nome of totali.perProgetto.keys()) if (!progetti.includes(nome)) progetti.push(nome);
-    return { ...letto, giorni, totali };
+    return { ...letto, giorni, totali: calcoli.totaliMese(giorni.values()) };
   });
-
-  // Nel riepilogo compaiono solo le assenze usate da qualcuno nel mese.
-  const assenzeUsate = [...tipiAssenza.values()].filter((tipo) =>
-    righe.some((riga) => riga.totali.perAssenza.has(tipo.codice))
-  );
-  return { mese, righe, tipiAssenza: assenzeUsate, progetti };
+  return { mese, righe };
 }
 
 const INTESTAZIONE = {
@@ -287,32 +215,21 @@ const INTESTAZIONE = {
 const DURATA = { formato: "[h]:mm", bordo: true, allinea: "center" };
 
 /** Il file .xlsx del riepilogo: un foglio con tutti, poi il foglio del mese di ciascuno. */
-export function fileRiepilogo(riepilogo, configurazione = {}) {
-  const { mese, righe, tipiAssenza, progetti } = riepilogo;
-  const intestazioni = [
-    "Dipendente",
-    "Matricola",
-    "Giorni di presenza",
-    "Ore lavorate",
-    ...tipiAssenza.map((tipo) => (tipo.nome ? `${tipo.codice} — ${tipo.nome}` : tipo.codice)),
-    "Straordinari",
-    ...progetti,
-  ];
-  const durata = (minutiDurata) => ({ v: minutiDurata ? frazioneGiorno(minutiDurata) : null, stile: DURATA });
+export function fileRiepilogo(riepilogo) {
+  const { mese, righe } = riepilogo;
+  const intestazioni = ["Dipendente", "Posizione/funzione", "Giorni con ore", "Ore lavorate", "Giorni lavorati (ore ÷ 8)"];
 
   const tabella = [
-    [{ v: `Riepilogo presenze — ${nomeDelMese(mese)}`, stile: { grassetto: true, dimensione: 14 } }],
-    [configurazione.azienda ?? ""],
+    [{ v: `Riepilogo timesheet — ${nomeDelMese(mese)}`, stile: { grassetto: true, dimensione: 14 } }],
+    [righe.find((riga) => riga.profilo.ente)?.profilo.ente ?? ""],
     [],
     { altezza: 32, celle: intestazioni.map((voce) => ({ v: voce, stile: INTESTAZIONE })) },
     ...righe.map((riga) => [
       { v: nomeDipendente(riga.profilo), stile: { bordo: true } },
-      { v: riga.profilo.matricola, stile: { bordo: true, allinea: "center" } },
-      { v: riga.totali.giorniPresenza, stile: { bordo: true, allinea: "center" } },
-      durata(riga.totali.lavorate),
-      ...tipiAssenza.map((tipo) => durata(riga.totali.perAssenza.get(tipo.codice))),
-      durata(riga.totali.straordinario),
-      ...progetti.map((nome) => durata(riga.totali.perProgetto.get(nome))),
+      { v: riga.profilo.posizione, stile: { bordo: true } },
+      { v: riga.totali.giorniConOre, stile: { bordo: true, allinea: "center" } },
+      { v: frazioneGiorno(riga.totali.minuti), stile: DURATA },
+      { v: riga.totali.minuti / 60 / 8, stile: { bordo: true, allinea: "center" } },
     ]),
   ];
 
@@ -323,24 +240,15 @@ export function fileRiepilogo(riepilogo, configurazione = {}) {
       nome = nomeFoglioValido(`${nomeDipendente(riga.profilo).slice(0, 27)} ${numero}`);
     }
     nomiUsati.add(nome.toLowerCase());
-    return foglioMese({
-      ente: configurazione.azienda || riga.azienda,
-      profilo: riga.profilo,
-      mese,
-      giorni: riga.giorni,
-      tipiAssenza: riga.tipiAssenza.length ? riga.tipiAssenza : configurazione.assenze ?? [],
-      patrono: configurazione.patrono ?? "",
-      nomeFoglio: nome,
-    });
+    return foglioMese({ profilo: riga.profilo, mese, giorni: riga.giorni, patrono: riga.patrono, nomeFoglio: nome });
   });
 
   return creaXlsx([
     {
       nome: "Riepilogo",
       righe: tabella,
-      colonne: [26, 11, 10, 10, ...tipiAssenza.map(() => 12), 13, ...progetti.map(() => 14)],
+      colonne: [28, 30, 12, 12, 14],
       bloccaRighe: 4,
-      orizzontale: true,
       adattaLarghezza: true,
     },
     ...fogliDipendenti,
@@ -348,5 +256,5 @@ export function fileRiepilogo(riepilogo, configurazione = {}) {
 }
 
 export function nomeFileRiepilogo(mese) {
-  return `riepilogo-presenze_${mese}.xlsx`;
+  return `riepilogo-timesheet_${mese}.xlsx`;
 }
