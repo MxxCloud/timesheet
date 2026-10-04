@@ -1,7 +1,7 @@
 {
   "name": "Timesheet",
   "short_name": "Timesheet",
-  "description": "Presenze, attività e assenze di ogni giorno, con il foglio Excel del mese pronto da inviare. I dati restano sul dispositivo.",
+  "description": "Il timesheet del mese, compilato come il foglio Excel dell'ufficio e pronto da esportare. I dati restano sul dispositivo.",
   "id": "./",
   "categories": [
     "business",

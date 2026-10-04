@@ -109,147 +109,162 @@ function zipCompresso(parti) {
   return new Uint8Array(Buffer.concat([...pezzi, ...centrale, fine]));
 }
 
-const configurazione = {
-  azienda: "Prova Srl",
-  attivita: [
-    { nome: "Progetto A", attiva: true },
-    { nome: "Amministrazione", attiva: true },
-    { nome: "Vecchia commessa", attiva: false },
-  ],
-  assenze: [
-    { codice: "FE", nome: "Ferie" },
-    { codice: "PE", nome: "Permesso" },
-  ],
-  patrono: "",
-};
-
-const giorni = [
-  {
-    data: "2026-10-01",
-    intervalli: [
-      { entrata: "08:30", uscita: "12:30" },
-      { entrata: "13:30", uscita: "17:30" },
-      { entrata: "18:00", uscita: "19:00" },
-    ],
-    attivita: [
-      { attivita: "Progetto A", minuti: 360, descrizione: "analisi & test" },
-      { attivita: "Amministrazione", minuti: 180, descrizione: "" },
-    ],
-    assenze: [],
-    straordinario: { minuti: 60, nota: "consegna" },
-    note: "",
-  },
-  {
-    data: "2026-10-02",
-    intervalli: [],
-    attivita: [],
-    assenze: [{ tipo: "FE", minuti: 480 }],
-    straordinario: null,
-    note: "ponte",
-  },
-  {
-    data: "2026-09-30",
-    intervalli: [{ entrata: "09:00", uscita: "17:00" }],
-    attivita: [],
-    assenze: [],
-    straordinario: null,
-    note: "",
-  },
-];
-
-test("il file del mese si rilegge identico, anche dopo un salvataggio da Excel", async () => {
-  const profilo = { nome: "Mario", cognome: "Rossi", matricola: "007" };
-  const byte = esportazione.fileDelMese({ configurazione, profilo, mese: "2026-10", giorni });
-  assert.equal(esportazione.nomeFileMese(profilo, "2026-10"), "Rossi_Mario_2026-10.xlsx");
-
-  for (const versione of [byte, zipCompresso(comeRisalvatoDaExcel(await xlsx.leggiZip(byte)))]) {
-    const letto = await esportazione.leggiFileMese(versione, "prova.xlsx");
-    assert.equal(letto.mese, "2026-10");
-    assert.equal(letto.azienda, "Prova Srl");
-    assert.deepEqual(letto.profilo, profilo);
-    assert.deepEqual(letto.tipiAssenza, configurazione.assenze);
-    assert.deepEqual([...letto.giorni.keys()], ["2026-10-01", "2026-10-02"]);
-    assert.deepEqual(letto.giorni.get("2026-10-01"), giorni[0]);
-    assert.deepEqual(letto.giorni.get("2026-10-02"), giorni[1]);
-  }
+test("carattere e bordi per lato finiscono negli stili", async () => {
+  const byte = xlsx.creaXlsx([
+    {
+      nome: "Stili",
+      righe: [[{ v: "Titolo", stile: { carattere: "Arial", grassetto: true, bordo: { sinistra: "medium", sopra: "medium" } } }]],
+      adattaPagina: true,
+    },
+  ]);
+  const parti = await xlsx.leggiZip(byte);
+  const stili = new TextDecoder().decode(parti.get("xl/styles.xml"));
+  assert.match(stili, /<b\/><sz val="11"\/><name val="Arial"\/>/);
+  assert.match(stili, /<left style="medium">.*<right\/><top style="medium">/);
+  const foglio = new TextDecoder().decode(parti.get("xl/worksheets/sheet1.xml"));
+  assert.match(foglio, /fitToWidth="1" fitToHeight="1"/);
 });
 
-test("il foglio visibile ha totali, colonne delle attività e festivi", async () => {
-  const byte = esportazione.fileDelMese({
-    configurazione,
-    profilo: { nome: "Mario", cognome: "Rossi", matricola: "007" },
-    mese: "2026-10",
-    giorni,
-  });
-  const [visibile, dati] = await xlsx.leggiXlsx(byte);
-  assert.equal(visibile.nome, "Timesheet");
-  assert.equal(dati.nascosto, true);
+const profilo = {
+  nome: "Mario",
+  cognome: "Rossi",
+  posizione: "Ricercatore",
+  ente: "Ente di Prova",
+  progetto: "Progetto Ponte",
+};
 
-  const intestazione = visibile.righe[4];
-  // La commessa disattivata e mai usata non ha colonna.
-  assert.deepEqual(intestazione.slice(6, 9), ["Ore lavorate", "Progetto A", "Amministrazione"]);
-  assert.equal(intestazione.includes("Vecchia commessa"), false);
+const riga = (data, dalle, alle, attivita, localita = "", progetto = "") => ({
+  data,
+  dalle,
+  alle,
+  attivita,
+  localita,
+  progetto,
+});
 
-  const primoOttobre = visibile.righe[5];
-  assert.equal(primoOttobre[1], "gio");
-  assert.equal(primoOttobre[6], 540 / 1440);
-  assert.match(primoOttobre.at(-1), /Altri intervalli: 18:00–19:00/);
-  assert.match(primoOttobre.at(-1), /Straordinario: consegna/);
+const giorni = [
+  riga("2026-10-01", "09:00", "18:00", "Analisi dei dati & riunione con il partner", "Sede", "Progetto A e varie attività"),
+  riga("2026-10-02", "", "", "FERIE"),
+  riga("2026-10-05", "09:00", "13:00", "Relazione", "Roma, trasferta", "Progetto A"),
+  riga("2025-12-30", "09:00", "17:00", "Dell'anno prima", "Sede"),
+];
 
-  const quattroOttobre = visibile.righe[8];
-  assert.match(quattroOttobre.at(-1), /San Francesco/);
+test("il file dell'anno ha i dodici fogli del modello e i dati nascosti", async () => {
+  const byte = esportazione.fileDellAnno({ profilo, anno: "2026", giorni });
+  assert.equal(esportazione.nomeFileAnno(profilo, "2026"), "Rossi_Mario_TIME_SHEET_2026.xlsx");
 
-  const totali = visibile.righe[5 + 31];
-  assert.equal(totali[0], "Totale");
-  assert.equal(totali[6], 540 / 1440);
-  assert.equal(totali[7], 360 / 1440);
+  const fogli = await xlsx.leggiXlsx(byte);
+  assert.deepEqual(
+    fogli.map((f) => f.nome),
+    [
+      "GENNAIO 2026", "FEBBRAIO 2026", "MARZO 2026", "APRILE 2026", "MAGGIO 2026", "GIUGNO 2026",
+      "LUGLIO 2026", "AGOSTO 2026", "SETTEMBRE 2026", "OTTOBRE 2026", "NOVEMBRE 2026", "DICEMBRE 2026",
+      "dati",
+    ]
+  );
+  assert.equal(fogli.at(-1).nascosto, true);
+
+  const ottobre = fogli[9].righe;
+  assert.equal(ottobre[0][0], "Time sheet");
+  assert.deepEqual(ottobre[2].slice(0, 2), ["Ente:", "Ente di Prova"]);
+  assert.deepEqual(ottobre[3].slice(0, 2), ["Progetto:", "Progetto Ponte"]);
+  assert.deepEqual(ottobre[4].slice(0, 2), ["Nome e cognome:", "Mario Rossi"]);
+  assert.deepEqual(ottobre[5].slice(0, 2), ["Posizione/funzione:", "Ricercatore"]);
+  assert.equal(ottobre[6][0], "giorni lavorati:");
+  assert.equal(ottobre[6][1], (13 * 60) / 1440 / 8);
+  assert.equal(ottobre[7][0], "Mese: OTTOBRE 2026");
+  assert.deepEqual(ottobre[10], [null, "dalle", "alle", "Ore lavorate", "Attività", "Località di svolgimento", "Progetto"]);
+
+  // 1 ottobre: la riga com'è scritta, con le ore calcolate.
+  assert.deepEqual(ottobre[11], [
+    xlsx.serialeData("2026-10-01"),
+    540 / 1440,
+    1080 / 1440,
+    540 / 1440,
+    "Analisi dei dati & riunione con il partner",
+    "Sede",
+    "Progetto A e varie attività",
+  ]);
+  // Ferie a giornata intera: la parola nell'attività, il resto vuoto.
+  assert.deepEqual(ottobre[12].slice(1), [null, null, 0, "FERIE", null, null]);
+  // Domenica 4 ottobre, San Francesco: il nome della festa.
+  assert.equal(ottobre[14][4], "San Francesco d'Assisi");
+  assert.deepEqual(ottobre[15].slice(3), [240 / 1440, "Relazione", "Roma, trasferta", "Progetto A"]);
+
+  assert.equal(ottobre[11 + 31][0], "TOTALE ORE LAVORATE NEL MESE");
+  assert.equal(ottobre[11 + 31][3], (13 * 60) / 1440);
+  assert.equal(fogli[1].righe[11 + 28][0], "TOTALE ORE LAVORATE NEL MESE");
+
+  const parti = await xlsx.leggiZip(byte);
+  const xmlOttobre = new TextDecoder().decode(parti.get("xl/worksheets/sheet10.xml"));
+  assert.match(xmlOttobre, /<f>C12-B12<\/f>/);
+  assert.match(xmlOttobre, /<f>SUM\(D12:D42\)<\/f>/);
+  assert.match(xmlOttobre, /<f>D43\/8<\/f>/);
+  const xmlFebbraio = new TextDecoder().decode(parti.get("xl/worksheets/sheet2.xml"));
+  assert.match(xmlFebbraio, /<f>SUM\(D12:D39\)<\/f>/);
+  assert.match(xmlFebbraio, /<f>D40\/8<\/f>/);
+});
+
+test("il file dell'anno si rilegge identico, anche dopo un salvataggio da Excel", async () => {
+  const byte = esportazione.fileDellAnno({ profilo, anno: "2026", giorni, patrono: "06-24" });
+  for (const versione of [byte, zipCompresso(comeRisalvatoDaExcel(await xlsx.leggiZip(byte)))]) {
+    const letto = await esportazione.leggiFile(versione, "prova.xlsx");
+    assert.equal(letto.anno, "2026");
+    assert.equal(letto.patrono, "06-24");
+    assert.deepEqual(letto.profilo, profilo);
+    assert.deepEqual([...letto.giorni.keys()], ["2026-10-01", "2026-10-02", "2026-10-05"]);
+    for (const originale of giorni.slice(0, 3)) {
+      assert.deepEqual(letto.giorni.get(originale.data), originale);
+    }
+  }
 });
 
 test("i file non prodotti dalla app vengono rifiutati con un messaggio chiaro", async () => {
   const estraneo = xlsx.creaXlsx([{ nome: "Foglio1", righe: [["ciao"]] }]);
-  await assert.rejects(esportazione.leggiFileMese(estraneo, "a.xlsx"), /manca il foglio dei dati/);
+  await assert.rejects(esportazione.leggiFile(estraneo, "a.xlsx"), /manca il foglio dei dati/);
   await assert.rejects(
-    esportazione.leggiFileMese(new TextEncoder().encode("non sono uno zip"), "b.xlsx"),
+    esportazione.leggiFile(new TextEncoder().encode("non sono uno zip"), "b.xlsx"),
     /non è un file Excel leggibile/
   );
 });
 
-test("il riepilogo unisce i dipendenti e rifiuta mesi diversi", async () => {
-  const leggi = async (profilo, mese, delMese) =>
-    esportazione.leggiFileMese(
-      esportazione.fileDelMese({ configurazione, profilo, mese, giorni: delMese })
-    );
-  const mario = await leggi({ nome: "Mario", cognome: "Rossi", matricola: "1" }, "2026-10", giorni);
-  const anna = await leggi({ nome: "Anna", cognome: "Bianchi", matricola: "2" }, "2026-10", [
-    {
-      data: "2026-10-05",
-      intervalli: [{ entrata: "09:00", uscita: "13:00" }],
-      attivita: [{ attivita: "Progetto A", minuti: 240, descrizione: "" }],
-      assenze: [{ tipo: "PE", minuti: 240 }],
-      straordinario: null,
-      note: "",
-    },
+test("il riepilogo unisce i dipendenti, sceglie il mese e rifiuta anni diversi", async () => {
+  const leggi = async (persona, anno, delAnno) =>
+    esportazione.leggiFile(esportazione.fileDellAnno({ profilo: persona, anno, giorni: delAnno }));
+  const mario = await leggi(profilo, "2026", giorni);
+  const anna = await leggi({ ...profilo, nome: "Anna", cognome: "Bianchi", posizione: "" }, "2026", [
+    riga("2026-09-30", "09:00", "17:00", "Amministrazione", "Smart working"),
+    riga("2026-10-05", "09:00", "13:00", "Mezza giornata", "Sede"),
   ]);
-  const settembre = await leggi({ nome: "Mario", cognome: "Rossi", matricola: "1" }, "2026-09", giorni);
+  const marioAnnoPrima = await leggi(profilo, "2025", giorni);
 
-  const [riepilogo, errori] = esportazione.riepilogoUfficio([mario, anna, mario]);
+  const [uniti, errori] = esportazione.unisciFile([mario, anna, mario]);
   assert.deepEqual(errori, []);
-  assert.equal(riepilogo.righe.length, 2);
-  assert.equal(riepilogo.righe[0].profilo.cognome, "Bianchi");
+  assert.equal(uniti.anno, "2026");
   assert.deepEqual(
-    riepilogo.tipiAssenza.map((t) => t.codice),
-    ["FE", "PE"]
+    uniti.file.map((f) => f.profilo.cognome),
+    ["Bianchi", "Rossi"]
   );
-  assert.equal(riepilogo.righe[1].totali.presenza, 540);
+  assert.deepEqual(esportazione.mesiConDati(uniti.file), ["2026-10", "2026-09"]);
 
-  const [, mesiDiversi] = esportazione.riepilogoUfficio([mario, settembre]);
-  assert.match(mesiDiversi[0], /mesi diversi/);
+  const ottobre = esportazione.riepilogoUfficio(uniti.file, "2026-10");
+  assert.deepEqual(ottobre.righe[1].totali, { minuti: 540 + 240, giorniConOre: 2 });
+  assert.deepEqual(ottobre.righe[0].totali, { minuti: 240, giorniConOre: 1 });
 
-  const fogli = await xlsx.leggiXlsx(esportazione.fileRiepilogo(riepilogo, configurazione));
+  const settembre = esportazione.riepilogoUfficio(uniti.file, "2026-09");
+  assert.equal(settembre.righe[0].totali.minuti, 480);
+  assert.equal(settembre.righe[1].totali.minuti, 0);
+
+  const [, anniDiversi] = esportazione.unisciFile([mario, marioAnnoPrima]);
+  assert.match(anniDiversi[0], /anni diversi/);
+
+  const fogli = await xlsx.leggiXlsx(esportazione.fileRiepilogo(ottobre));
   assert.deepEqual(
     fogli.map((f) => f.nome),
     ["Riepilogo", "Bianchi Anna", "Rossi Mario"]
   );
+  assert.equal(fogli[0].righe[1][0], "Ente di Prova");
   assert.equal(fogli[0].righe[4][0], "Bianchi Anna");
-  assert.equal(fogli[0].righe[5][3], 540 / 1440);
+  assert.deepEqual(fogli[0].righe[5].slice(2), [2, 780 / 1440, 13 / 8]);
+  assert.equal(fogli[2].righe[7][0], "Mese: OTTOBRE 2026");
 });

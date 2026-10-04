@@ -4,319 +4,197 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Timesheet</title>
-  <meta name="description" content="Presenze, attività e assenze da registrare ogni giorno, con il foglio Excel del mese pronto da inviare.">
+  <meta name="description" content="Il timesheet del mese, compilato come il foglio Excel dell'ufficio e pronto da esportare.">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1d6b74">
   <link rel="icon" href="icona-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icona-192.png">
   <link rel="stylesheet" href="style.css">
-  <script>
-    // Va qui, e non in app.js: i moduli sono differiti, e il tema arriverebbe
-    // dopo il primo disegno: si vedrebbe un lampo del tema sbagliato.
-    try {
-      const tema = localStorage.getItem("tema");
-      if (tema === "chiaro" || tema === "scuro") document.documentElement.dataset.tema = tema;
-    } catch {
-      // Archivio locale non disponibile: resta il tema del dispositivo.
-    }
-  </script>
 </head>
 <body>
-  <main>
-    <header class="intestazione">
-      <h1>Timesheet</h1>
-      <button type="button" id="installa" class="installa">Installa</button>
-      <p id="istruzioni-installa" class="istruzioni-installa" hidden></p>
-    </header>
+  <header class="barra">
+    <div class="barra-mese">
+      <button type="button" id="mese-precedente" class="passo" aria-label="Mese precedente" title="Mese precedente">‹</button>
+      <h1 id="titolo-mese">Timesheet</h1>
+      <button type="button" id="mese-successivo" class="passo" aria-label="Mese successivo" title="Mese successivo">›</button>
+      <button type="button" id="vai-a-oggi" class="leggero">Oggi</button>
+    </div>
+    <div class="barra-azioni">
+      <span id="stato-salvataggio" class="stato-salvataggio" aria-live="polite"></span>
+      <button type="button" id="esporta-anno" class="principale">Esporta l'Excel</button>
+      <button type="button" id="apri-ufficio" class="leggero" hidden>Ufficio</button>
+      <button type="button" id="apri-impostazioni" class="leggero">Impostazioni</button>
+      <button type="button" id="installa" class="leggero">Installa</button>
+    </div>
+  </header>
+  <p id="istruzioni-installa" class="istruzioni-installa" hidden></p>
 
-    <ul id="errori" class="errori" role="alert" hidden></ul>
-    <ul id="avvisi" class="avvisi" hidden></ul>
+  <ul id="errori" class="messaggi errori" role="alert" hidden></ul>
+  <ul id="avvisi" class="messaggi avvisi" hidden></ul>
 
-    <!-- ================= vista: oggi ================= -->
-    <section id="vista-oggi" class="vista" aria-label="La giornata di oggi">
-      <div class="scheda timbratura">
-        <p id="data-oggi" class="etichetta-grande">—</p>
-        <p id="stato-timbratura" class="stato-timbratura">—</p>
-        <button type="button" id="timbra" class="timbra">Entra</button>
-        <p id="riassunto-oggi" class="scomposizione"></p>
+  <!-- ================= il foglio del mese ================= -->
+  <main id="vista-foglio" class="vista">
+    <div class="foglio-scorre">
+      <table class="foglio" id="foglio">
+        <colgroup>
+          <col class="col-data">
+          <col class="col-orario">
+          <col class="col-orario">
+          <col class="col-ore">
+          <col class="col-attivita">
+          <col class="col-localita">
+          <col class="col-progetto">
+        </colgroup>
+        <tbody class="intestazione-foglio">
+          <tr class="riga-titolo"><th colspan="7" scope="colgroup">Time sheet</th></tr>
+          <tr class="riga-vuota"><td colspan="7"></td></tr>
+          <tr>
+            <th scope="row"><label for="profilo-ente">Ente:</label></th>
+            <td colspan="6"><input id="profilo-ente" class="campo-testa" data-campo="ente" autocomplete="organization"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="profilo-progetto">Progetto:</label></th>
+            <td colspan="6"><input id="profilo-progetto" class="campo-testa" data-campo="progetto"></td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="profilo-nome">Nome e cognome:</label></th>
+            <td colspan="6">
+              <div class="nome-cognome">
+                <input id="profilo-nome" class="campo-testa" data-campo="nome" placeholder="Nome" aria-label="Nome" autocomplete="given-name">
+                <input id="profilo-cognome" class="campo-testa" data-campo="cognome" placeholder="Cognome" aria-label="Cognome" autocomplete="family-name">
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <th scope="row"><label for="profilo-posizione">Posizione/funzione:</label></th>
+            <td colspan="6"><input id="profilo-posizione" class="campo-testa" data-campo="posizione" autocomplete="organization-title"></td>
+          </tr>
+          <tr>
+            <th scope="row">giorni lavorati:</th>
+            <td colspan="6" id="giorni-lavorati" class="giorni-lavorati"></td>
+          </tr>
+          <tr class="riga-mese">
+            <th scope="row" colspan="7" id="etichetta-mese">Mese:</th>
+          </tr>
+          <tr class="riga-vuota"><td colspan="7"></td></tr>
+        </tbody>
+        <tbody class="colonne">
+          <tr class="riga-colonne">
+            <th scope="col"><span class="solo-lettori">Giorno</span></th>
+            <th scope="col">dalle</th>
+            <th scope="col">alle</th>
+            <th scope="col">Ore lavorate</th>
+            <th scope="col">Attività</th>
+            <th scope="col">Località di svolgimento</th>
+            <th scope="col">Progetto</th>
+          </tr>
+        </tbody>
+        <tbody id="righe-giorni" class="giorni"></tbody>
+        <tfoot>
+          <tr class="riga-totale">
+            <th scope="row">TOTALE ORE LAVORATE NEL MESE</th>
+            <td></td>
+            <td></td>
+            <td id="totale-mese" class="totale"></td>
+            <td colspan="3"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <p class="aiuto">
+      Si scrive direttamente nelle celle e si salva da solo. <kbd>Invio</kbd> scende alla riga sotto,
+      <kbd>Tab</kbd> passa alla cella accanto, <kbd>Esc</kbd> annulla la modifica della cella.
+      Nei giorni lavorativi, appena scrivi l'attività, orari e località si compilano con quelli abituali.
+      Per un'assenza scrivi <strong>FERIE</strong>, <strong>MALATTIA</strong> o <strong>PERMESSO</strong> nell'attività e lascia vuoti gli orari.
+    </p>
+  </main>
+
+  <!-- ================= ufficio ================= -->
+  <main id="vista-ufficio" class="vista" hidden>
+    <section class="pannello">
+      <div class="pannello-testa">
+        <h2>Riepilogo del mese</h2>
+        <button type="button" id="torna-al-foglio" class="leggero">← Torna al foglio</button>
       </div>
-      <div id="posto-editor-oggi"></div>
-    </section>
-
-    <!-- ================= vista: una giornata qualsiasi ================= -->
-    <section id="vista-giorno" class="vista" aria-label="Modifica di una giornata">
-      <div class="navigatore-giorno">
-        <button type="button" id="torna-al-mese" class="minimo">← Torna al mese</button>
-        <button type="button" id="svuota-giorno" class="minimo pericolo">Svuota la giornata</button>
-      </div>
-      <div id="posto-editor-giorno"></div>
-    </section>
-
-    <!-- ================= vista: mese ================= -->
-    <section id="vista-mese" class="vista" aria-label="Il mese">
-      <div class="scheda cruscotto">
-        <div class="navigatore">
-          <button type="button" id="mese-precedente" class="passo" aria-label="Mese precedente">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>
-          </button>
-          <p id="mese-corrente" class="etichetta-grande">—</p>
-          <button type="button" id="mese-successivo" class="passo" aria-label="Mese successivo">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
-          </button>
-        </div>
-        <p class="etichetta-totale">Ore lavorate</p>
-        <p class="totale-grande"><strong id="ore-mese">—</strong></p>
-        <p id="scomposizione-mese" class="scomposizione"></p>
-        <div class="esportazione-mese">
-          <button type="button" id="esporta-mese" class="principale-scheda">Esporta l'Excel del mese</button>
-          <p id="stato-invio" class="stato-invio"></p>
-        </div>
-      </div>
-
-      <div class="kpi">
-        <div class="scheda tessera">
-          <span class="etichetta-kpi">Giorni di presenza</span>
-          <strong id="kpi-giorni" class="valore-kpi">—</strong>
-        </div>
-        <div class="scheda tessera">
-          <span class="etichetta-kpi">Assenze</span>
-          <strong id="kpi-assenze" class="valore-kpi">—</strong>
-        </div>
-        <div class="scheda tessera">
-          <span class="etichetta-kpi">Straordinari</span>
-          <strong id="kpi-straordinari" class="valore-kpi">—</strong>
-        </div>
-      </div>
-
-      <section class="scheda riquadro" aria-labelledby="titolo-attivita-mese">
-        <h2 id="titolo-attivita-mese">Ore per attività</h2>
-        <ul id="attivita-mese" class="barre"></ul>
-      </section>
-
-      <section class="scheda riquadro" aria-labelledby="titolo-giorni">
-        <h2 id="titolo-giorni">Giorno per giorno</h2>
-        <p class="aiuto">Tocca un giorno per modificarlo. I giorni lavorativi passati senza presenze né assenze sono segnati.</p>
-        <ul id="elenco-giorni" class="elenco-giorni"></ul>
-      </section>
-    </section>
-
-    <!-- ================= vista: impostazioni ================= -->
-    <section id="vista-impostazioni" class="vista" aria-label="Impostazioni">
-      <form id="form-profilo" class="scheda modulo" novalidate>
-        <p class="titolo-form">Chi sei</p>
-        <div class="campo">
-          <label for="profilo-nome">Nome</label>
-          <input type="text" id="profilo-nome" maxlength="60" autocomplete="given-name" required>
-        </div>
-        <div class="campo">
-          <label for="profilo-cognome">Cognome</label>
-          <input type="text" id="profilo-cognome" maxlength="60" autocomplete="family-name" required>
-        </div>
-        <div class="campo">
-          <label for="profilo-matricola">Matricola <span class="facoltativo">(facoltativa)</span></label>
-          <input type="text" id="profilo-matricola" maxlength="20">
-        </div>
-        <fieldset class="campo-largo ore-previste">
-          <legend>Ore previste per giorno</legend>
-          <p class="aiuto">Servono per le assenze a giornata intera e per segnalare i giorni da completare.</p>
-          <div id="ore-previste" class="griglia-settimana"></div>
-        </fieldset>
-        <div class="azioni-form">
-          <button type="submit">Salva</button>
-        </div>
-      </form>
-
-      <details class="scheda gestione" id="pannello-configurazione">
-        <summary>Configurazione dell'ufficio</summary>
-        <p class="nota-pannello">Attività e codici di assenza li prepara l'amministrazione e li manda come file: importalo qui. Puoi anche modificarli a mano.</p>
-        <label class="ripristina">
-          <input type="file" id="importa-configurazione" accept=".json,application/json">
-          <span>Importa il file della configurazione</span>
+      <p>Importa i file Excel dell'anno ricevuti dai dipendenti, anche tutti insieme, e scegli il mese.</p>
+      <div class="riga-comandi">
+        <label class="bottone-file">
+          Importa i file Excel…
+          <input type="file" id="importa-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple>
         </label>
-
-        <form id="form-azienda" class="riga-aggiunta" novalidate>
-          <div class="campo">
-            <label for="azienda">Azienda</label>
-            <input type="text" id="azienda" maxlength="80">
-          </div>
-          <div class="campo campo-stretto">
-            <label for="patrono">Patrono <span class="facoltativo">(gg/mm)</span></label>
-            <input type="text" id="patrono" maxlength="5" placeholder="24/06" inputmode="numeric">
-          </div>
-          <button type="submit">Salva</button>
-        </form>
-
-        <h3 class="sottotitolo">Attività e commesse</h3>
-        <form id="form-attivita" class="riga-aggiunta" novalidate>
-          <label for="nuova-attivita" class="etichetta-nascosta">Nuova attività</label>
-          <input type="text" id="nuova-attivita" maxlength="60" placeholder="es. Progetto Ponte">
-          <button type="submit">Aggiungi</button>
-        </form>
-        <ul id="elenco-attivita" class="elenco-categorie"></ul>
-
-        <h3 class="sottotitolo">Codici di assenza</h3>
-        <form id="form-assenza" class="riga-aggiunta" novalidate>
-          <label for="nuovo-codice" class="etichetta-nascosta">Codice</label>
-          <input type="text" id="nuovo-codice" maxlength="6" placeholder="Codice" class="campo-codice">
-          <label for="nuovo-nome-assenza" class="etichetta-nascosta">Descrizione</label>
-          <input type="text" id="nuovo-nome-assenza" maxlength="40" placeholder="es. Congedo parentale">
-          <button type="submit">Aggiungi</button>
-        </form>
-        <ul id="elenco-assenze" class="elenco-categorie"></ul>
-      </details>
-
-      <details class="scheda gestione" id="pannello-backup">
-        <summary>Backup e ripristino</summary>
-        <p class="nota-pannello">I dati stanno solo in questo browser, su questo PC. Svuotare i dati del browser li cancella: il backup è l'unico modo per riaverli, ed è anche il modo per portarli su un altro PC.</p>
-        <p id="nota-backup" class="nota-pannello"></p>
-        <div class="riga-backup">
-          <button type="button" id="scarica-backup">Scarica il backup</button>
-          <label class="ripristina">
-            <input type="file" id="carica-backup" accept=".json,application/json">
-            <span>Ripristina da un backup</span>
-          </label>
-        </div>
-      </details>
-
-      <details class="scheda gestione">
-        <summary>Aspetto</summary>
-        <div class="segmenti" id="scelta-tema" role="radiogroup" aria-label="Tema">
-          <label class="segmento"><input type="radio" name="tema" value="chiaro"><span>Chiaro</span></label>
-          <label class="segmento"><input type="radio" name="tema" value="scuro"><span>Scuro</span></label>
-          <label class="segmento"><input type="radio" name="tema" value="sistema" checked><span>Sistema</span></label>
-        </div>
-      </details>
-
-      <details class="scheda gestione">
-        <summary>Amministrazione</summary>
-        <p class="nota-pannello">Chi raccoglie i timesheet di tutti attiva la sezione Ufficio: da lì scarica la configurazione da mandare ai dipendenti e importa i loro file Excel per il riepilogo del mese.</p>
-        <label class="interruttore">
-          <input type="checkbox" id="modalita-ufficio">
-          <span>Mostra la sezione Ufficio</span>
-        </label>
-      </details>
-    </section>
-
-    <!-- ================= vista: ufficio ================= -->
-    <section id="vista-ufficio" class="vista" aria-label="Ufficio">
-      <section class="scheda riquadro" aria-labelledby="titolo-configurazione-ufficio">
-        <h2 id="titolo-configurazione-ufficio">1 · Configurazione per i dipendenti</h2>
-        <p class="aiuto">Prepara azienda, attività e codici di assenza in Impostazioni → Configurazione dell'ufficio. Poi scarica il file e mandalo a ogni dipendente, che lo importa dallo stesso pannello. Così tutti usano gli stessi nomi.</p>
-        <p id="sintesi-configurazione" class="sintesi"></p>
-        <button type="button" id="scarica-configurazione" class="principale-scheda">Scarica la configurazione</button>
-      </section>
-
-      <section class="scheda riquadro" aria-labelledby="titolo-riepilogo">
-        <h2 id="titolo-riepilogo">2 · Riepilogo del mese</h2>
-        <p class="aiuto">Importa i file Excel che i dipendenti ti hanno mandato, anche tutti insieme. Restano solo in questa pagina finché non la chiudi.</p>
-        <div class="riga-backup">
-          <label class="ripristina">
-            <input type="file" id="importa-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple>
-            <span>Importa i file dei dipendenti</span>
-          </label>
-          <button type="button" id="svuota-riepilogo" class="secondario-scheda" hidden>Svuota l'elenco</button>
-        </div>
-        <ul id="errori-file" class="errori" hidden></ul>
-        <p id="titolo-mese-riepilogo" class="etichetta-grande" hidden></p>
-        <div class="contenitore-tabella" id="contenitore-riepilogo" hidden>
-          <table id="tabella-riepilogo" class="tabella"></table>
-        </div>
-        <button type="button" id="scarica-riepilogo" class="principale-scheda" hidden>Scarica il riepilogo in Excel</button>
-      </section>
+        <label id="campo-mese-riepilogo" hidden>Mese <select id="mese-riepilogo"></select></label>
+        <button type="button" id="svuota-riepilogo" class="leggero" hidden>Svuota l'elenco</button>
+      </div>
+      <ul id="errori-file" class="messaggi errori" hidden></ul>
+      <div id="contenitore-riepilogo" class="riepilogo-scorre" hidden>
+        <table id="tabella-riepilogo" class="riepilogo"></table>
+      </div>
+      <button type="button" id="scarica-riepilogo" class="principale" hidden>Scarica il riepilogo in Excel</button>
     </section>
   </main>
 
-  <!-- L'editor della giornata è uno solo: si sposta fra «Oggi» e la vista del giorno. -->
-  <form id="editor" class="scheda editor" novalidate>
-    <div class="testa-editor">
-      <p id="titolo-editor" class="titolo-form">Giornata</p>
-      <p id="sottotitolo-editor" class="festa" hidden></p>
-    </div>
+  <!-- ================= impostazioni ================= -->
+  <dialog id="dialogo-impostazioni" class="dialogo" aria-labelledby="titolo-impostazioni">
+    <form id="form-abituale" method="dialog">
+      <h2 id="titolo-impostazioni">Impostazioni</h2>
 
-    <fieldset class="sezione-editor">
-      <legend>Presenza</legend>
-      <ul id="righe-intervalli" class="righe"></ul>
-      <div class="piede-sezione">
-        <button type="button" id="aggiungi-intervallo" class="aggiungi">+ Intervallo</button>
-        <p id="sintesi-presenza" class="sintesi"></p>
-      </div>
-    </fieldset>
-
-    <fieldset class="sezione-editor">
-      <legend>Attività</legend>
-      <ul id="righe-attivita" class="righe"></ul>
-      <p id="senza-attivita" class="aiuto" hidden>Nessuna attività in elenco: aggiungile in Impostazioni → Configurazione dell'ufficio, o importa il file dell'amministrazione.</p>
-      <div class="piede-sezione">
-        <button type="button" id="aggiungi-attivita" class="aggiungi">+ Attività</button>
-        <button type="button" id="assegna-resto" class="aggiungi" hidden>Assegna il resto</button>
-        <p id="sintesi-attivita" class="sintesi"></p>
-      </div>
-    </fieldset>
-
-    <fieldset class="sezione-editor">
-      <legend>Assenze</legend>
-      <ul id="righe-assenze" class="righe"></ul>
-      <div class="piede-sezione">
-        <button type="button" id="aggiungi-assenza" class="aggiungi">+ Assenza</button>
-        <button type="button" id="giornata-intera" class="aggiungi">Assente tutto il giorno</button>
-      </div>
-    </fieldset>
-
-    <fieldset class="sezione-editor">
-      <legend>Straordinario</legend>
-      <div class="riga-straordinario">
-        <div class="campo campo-ore">
-          <label for="straordinario-ore">Ore</label>
-          <input type="text" id="straordinario-ore" inputmode="decimal" placeholder="1:30" autocomplete="off">
+      <fieldset>
+        <legend>Giornata abituale</legend>
+        <p class="nota">Si scrive da sola nei giorni lavorativi appena compili l'attività; si può sempre cambiare nella riga.</p>
+        <div class="campi">
+          <label>dalle <input id="abituale-dalle" inputmode="numeric" placeholder="9:00"></label>
+          <label>alle <input id="abituale-alle" inputmode="numeric" placeholder="17:00"></label>
+          <label class="largo">Località di svolgimento <input id="abituale-localita" placeholder="es. la sede dell'ente"></label>
         </div>
-        <div class="campo">
-          <label for="straordinario-nota">Nota</label>
-          <input type="text" id="straordinario-nota" maxlength="200" placeholder="es. chiusura del rendiconto">
-        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Calendario</legend>
+        <label>Patrono (giorno/mese) <input id="abituale-patrono" placeholder="es. 24/06"></label>
+        <p class="nota">Le festività nazionali sono già incluse; il patrono si aggiunge alle righe in rosso.</p>
+      </fieldset>
+
+      <ul id="errori-impostazioni" class="messaggi errori" hidden></ul>
+      <div class="riga-comandi">
+        <button type="submit" value="salva" class="principale">Salva</button>
+      </div>
+    </form>
+
+    <fieldset>
+      <legend>Backup e ripristino</legend>
+      <p id="nota-backup" class="nota"></p>
+      <p class="nota">I dati stanno solo in questo browser: il backup serve a non perderli e a spostarli su un altro PC.</p>
+      <div class="riga-comandi">
+        <button type="button" id="scarica-backup">Scarica il backup</button>
+        <label class="bottone-file">
+          Ripristina da un backup…
+          <input type="file" id="carica-backup" accept=".json,application/json">
+        </label>
       </div>
     </fieldset>
 
-    <div class="campo">
-      <label for="note-giorno">Note della giornata</label>
-      <textarea id="note-giorno" rows="2" maxlength="500"></textarea>
+    <fieldset>
+      <legend>Amministrazione</legend>
+      <label class="interruttore"><input type="checkbox" id="modalita-ufficio"> Mostra la sezione Ufficio, per il riepilogo dei file dei dipendenti</label>
+    </fieldset>
+
+    <div class="riga-comandi fine">
+      <button type="button" id="chiudi-impostazioni" class="leggero">Chiudi</button>
     </div>
+  </dialog>
 
-    <div class="azioni-form">
-      <button type="submit" id="salva-giorno">Salva la giornata</button>
-      <button type="button" id="annulla-giorno" class="secondario">Annulla modifiche</button>
-      <span id="esito-salvataggio" class="esito" role="status"></span>
-    </div>
-  </form>
-
-  <nav class="barra-inferiore" aria-label="Sezioni">
-    <button type="button" class="voce-nav" data-vista="oggi" aria-current="page">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>
-      <span>Oggi</span>
-    </button>
-    <button type="button" class="voce-nav" data-vista="mese">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v14H4zM4 10h16M9 3v4M15 3v4"/></svg>
-      <span>Mese</span>
-    </button>
-    <button type="button" class="voce-nav" data-vista="ufficio" hidden>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M9 20v-6h6v6M4 20h16"/></svg>
-      <span>Ufficio</span>
-    </button>
-    <button type="button" class="voce-nav" data-vista="impostazioni">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/></svg>
-      <span>Impostazioni</span>
-    </button>
-  </nav>
-
-  <dialog id="dialogo-conferma">
+  <dialog id="dialogo-conferma" class="dialogo piccolo" aria-labelledby="titolo-conferma">
     <form method="dialog">
       <h2 id="titolo-conferma">Confermi?</h2>
       <p id="dettaglio-conferma"></p>
-      <div class="azioni-dialogo">
-        <button value="annulla" class="secondario">Annulla</button>
+      <div class="riga-comandi fine">
+        <button value="annulla" class="leggero">Annulla</button>
         <button value="conferma" id="bottone-conferma" class="distruttivo">Conferma</button>
       </div>
     </form>
   </dialog>
+
+  <ul id="suggerimenti" class="suggerimenti" role="listbox" hidden></ul>
 
   <script type="module" src="app.js"></script>
 </body>
